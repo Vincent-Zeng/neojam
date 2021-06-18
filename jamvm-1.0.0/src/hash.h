@@ -91,7 +91,7 @@ extern void resizeHash(HashTable *table, int new_size);
                         void *data = table.hash_table[i].data;                     \
                         if(data && SCAVENGE(data)) {                               \
                             table.hash_table[i].data = NULL;                       \
-	                    table.hash_count--;                                    \
+	                        table.hash_count--;                                    \
                         }                                                          \
                     }                                                              \
                     if((table.hash_count * 3) > (table.hash_size * 2))             \

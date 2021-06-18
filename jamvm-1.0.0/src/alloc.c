@@ -133,6 +133,7 @@ void initialiseAlloc(int min, int max, int verbose) {
 
 #ifdef USE_MALLOC
     /* Don't use mmap - malloc max heap size */
+    // zeng: malloc申请内存
     char *mem = (char*)malloc(max);
     min = max;
 #else
@@ -141,28 +142,39 @@ void initialiseAlloc(int min, int max, int verbose) {
 
     if((int)mem == 0) {
         printf("Couldn't allocate the heap.  Aborting.\n");
-	exit(0);
+	    exit(0);
     }
 
+    // zeng: 堆起始地址
     /* Align heapbase so that start of heap + HEADER_SIZE is object aligned */
     heapbase = (char*)(((int)mem+HEADER_SIZE+OBJECT_GRAIN-1)&~(OBJECT_GRAIN-1))-HEADER_SIZE;
 
+    // zeng: 堆当前结束地址
     /* Ensure size of heap is multiple of OBJECT_GRAIN */
     heaplimit = heapbase+((min-(heapbase-mem))&~(OBJECT_GRAIN-1));
 
+    // zeng: 堆最大可分配的结束地址
     heapmax = heapbase+((max-(heapbase-mem))&~(OBJECT_GRAIN-1));
 
+    // zeng: 堆开始地址处初始化一个chunk信息
     freelist = (Chunk*)heapbase;
+    // zeng: header为这个chunk的大小?
     freelist->header = heapfree = heaplimit-heapbase;
+    // zeng: 下一个chunk??
     freelist->next = NULL;
 
+    // zeng: 打gc相关日志
     TRACE_GC(("Alloced heap size 0x%x\n",heaplimit-heapbase));
+    // zeng: 根据堆大小来初始化mark bits,是gc用的?
     allocMarkBits();
 
+    // zeng: 初始化互斥量用来操作堆
     initVMLock(heap_lock);
+    // zeng: 初始化互斥量用来操作 `has finalize` 相关
     initVMLock(has_fnlzr_lock);
+    // zeng: 初始化互斥量 条件变量 用来操作 `run finalize` 相关
     initVMWaitLock(run_fnlzr_lock);
-
+    // zeng: 是否打gc日志
     verbosegc = verbose;
 }
 
@@ -458,7 +470,7 @@ static int runFinalizers() {
         ob = run_finaliser_list[run_finaliser_start];
 
         unlockVMWaitLock(run_fnlzr_lock, self);
-	enableSuspend(self);
+	    enableSuspend(self);
 
 	/* Run the finalizer method */
         executeMethod(ob, CLASS_CB(ob->class)->finalizer);
@@ -473,7 +485,7 @@ static int runFinalizers() {
         /* Clear any exceptions - exceptions thrown in finalizers are
            silently ignored */
 
-	clearException();
+	    clearException();
     } while(++run_finaliser_start != run_finaliser_end);
 
     run_finaliser_start = run_finaliser_size;
@@ -574,6 +586,7 @@ void expandHeap(int min) {
     allocMarkBits();
 }
 
+// zeng: TODO 如何分配 分配时如何gc
 void *gcMalloc(int len) {
     static int state = 0; /* allocation failure action */
 
@@ -878,8 +891,8 @@ int maxHeapMem() {
 void asyncGCThreadLoop(Thread *self) {
     for(;;) {
         threadSleep(self, 1000, 0);
-	if(systemIdle(self))
-	    gc1();
+        if(systemIdle(self))
+            gc1();
     }
 }
 
@@ -892,7 +905,7 @@ void finalizerThreadLoop(Thread *self) {
 
     for(;;) {
         lockVMWaitLock(run_fnlzr_lock, self);
-	waitVMWaitLock(run_fnlzr_lock, self);
+	    waitVMWaitLock(run_fnlzr_lock, self);
         unlockVMWaitLock(run_fnlzr_lock, self);
         runFinalizers();
     }
@@ -913,9 +926,11 @@ void initialiseGC(int noasyncgc) {
     oom = allocObject(oom_clazz);
     executeMethod(oom, init, NULL);
 
+    // zeng: TODO
     /* Create and start VM threads for the async gc and finalizer */
     createVMThread("Finalizer", finalizerThreadLoop);
 
+    // zeng: TODO
     if(!noasyncgc)
         createVMThread("Async GC", asyncGCThreadLoop);
 }
@@ -1071,9 +1086,13 @@ Object *allocMultiArray(Class *array_class, int dim, int *count) {
 }
 
 Class *allocClass() {
+    // zeng: 从java heap中分配一个 Class + ClassBlock的空间 也就是Class后紧接着就是ClassBlock
     Class *class = (Class*)gcMalloc(sizeof(ClassBlock)+sizeof(Class));
+
+    // zeng: 打印分配日志
     TRACE_ALLOC(("<ALLOC: allocated class object @ 0x%x>\n", class));
-    return class; 
+
+    return class;
 }
 
 Object *cloneObject(Object *ob) {

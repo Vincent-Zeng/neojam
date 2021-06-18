@@ -191,17 +191,24 @@ ExecEnv *getExecEnv() {
 }
 
 void initialiseJavaStack(ExecEnv *ee) {
+    // zeng: 用malloc分配栈空间, 返回空间开始地址
    char *stack = malloc(java_stack_size);
+   // zeng: 在栈空间里分配一个methodblock TODO 这个数据结构是干啥的
    MethodBlock *mb = (MethodBlock *) stack;
+   // zeng: 接着分配一个frame TODO 这个数据结构是干啥的
    Frame *top = (Frame *) (mb+1);
 
    mb->max_stack = 0;
    top->mb = mb;
+   // zeng: 接着的栈地址赋值给ostack
    top->ostack = (u4*)(top+1);
    top->prev = 0;
 
+   // zeng: 设置执行上下文中的栈开始地址
    ee->stack = stack;
+   // zeng: 最近的stack frame
    ee->last_frame = top;
+   // zeng: 设置执行上下文中的栈结束地址
    ee->stack_end = stack + java_stack_size-1024;
 }
 
@@ -537,19 +544,22 @@ void *dumpThreadsLoop(void *arg) {
     sigaddset(&mask, SIGINT);
 
     for(;;) {
-	sigwait(&mask, &sig);
+        // zeng: 等待信号
+        sigwait(&mask, &sig);
 
-	if(sig == SIGINT)
-            exit(0);
+        // zeng: 收到SIGINT时退出
+        if(sig == SIGINT)
+                exit(0);
 
-	suspendAllThreads(&dummy);
+        // zeng: 收到SIGQUIT时循环打印线程信息
+        suspendAllThreads(&dummy);
         printf("Thread Dump\n-----------\n\n");
         for(thread = &main; thread != NULL; thread = thread->next) {
             char *name = String2Cstr((Object*)(INST_DATA(thread->ee->thread)[name_offset]));
             printf("Thread: %s 0x%x tid: %d state: %d\n", name, thread, thread->tid, thread->state);
-	    free(name);
+            free(name);
         }
-	resumeAllThreads(&dummy);
+        resumeAllThreads(&dummy);
     }
 }
 
@@ -558,6 +568,7 @@ static void initialiseSignals() {
     sigset_t mask;
     pthread_t tid;
 
+    // zeng: 用于实现java thread的suspend
     act.sa_handler = suspendHandler;
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
@@ -568,6 +579,7 @@ static void initialiseSignals() {
     sigaddset(&mask, SIGINT);
     sigprocmask(SIG_BLOCK, &mask, NULL);
 
+    // zeng: 开启一个线程 循环监听信号来打印所有 java thread 的信息
     pthread_create(&tid, &attributes, dumpThreadsLoop, NULL);
 }
 
@@ -600,6 +612,7 @@ void initialiseMainThread(int stack_size) {
 
     java_stack_size = stack_size;
 
+    // zeng: 分配一个thread-specific data area中的key给threadKey变量
     pthread_key_create(&threadKey, NULL);
 
     pthread_mutex_init(&lock, NULL);
@@ -610,19 +623,25 @@ void initialiseMainThread(int stack_size) {
 
     monitorInit(&sleep_mon);
 
+    // zeng: TODO
     pthread_attr_init(&attributes);
     pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
 
     main.stack_base = &thrdGrp_class;
 
+    // zeng: linux task -> pid
     main.tid = pthread_self();
+    // zeng: 生成jvm中唯一id
     main.id = genThreadID();
     main.state = RUNNING;
+    // zeng: 线程执行上下文
     main.ee = &main_ee;
-
+    // zeng: 初始化线程栈,并设置入执行上下文中
     initialiseJavaStack(&main_ee);
+    // zeng: 将main thread struct地址存入thread-specific data area 中
     setThreadSelf(&main);
 
+    // zeng: TODO 先看完类加载再接着看
     /* As we're initialising, VM will abort if Thread can't be found */
     thread_class = findSystemClass0("java/lang/Thread");
 
@@ -646,12 +665,13 @@ void initialiseMainThread(int stack_size) {
     name_offset = name->offset;
     run_mtbl_idx = run->method_table_index;
 
+    // zeng: 设置java thread对象
     main_ee.thread = allocObject(thread_class);
 
     thrdGrp_class = findSystemClass("java/lang/ThreadGroup");
     if(exceptionOccured()) {
         printException();
-	exit(1);
+	    exit(1);
     }
 
     root = findField(thrdGrp_class, "root", "Ljava/lang/ThreadGroup;");
@@ -670,6 +690,7 @@ void initialiseMainThread(int stack_size) {
 
     INST_DATA(main_ee.thread)[vmData_offset] = (u4)&main;
 
+    // zeng: 初始化signal相关 用于java层面线程的实现(例如suspend的实现)
     initialiseSignals();
 
     return;

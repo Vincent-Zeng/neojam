@@ -92,6 +92,7 @@ int utf8Comp(unsigned char *ptr, unsigned char *ptr2) {
 unsigned char *findUtf8String(unsigned char *string) {
     unsigned char *interned;
 
+    // zeng: 所以返回和参数一样的字符串有什么意义? 应该是为了相同的字符串只保留一份
     findHashEntry(hash_table, string, interned, TRUE, FALSE);
 
     return interned;
@@ -112,6 +113,7 @@ unsigned char *slash2dots(unsigned char *utf8) {
 }
 
 void initialiseUtf8() {
+    // zeng: utf8字符串 哈希表 - 分配内存 初始化
     initHashTable(hash_table, HASHTABSZE);
 }
 

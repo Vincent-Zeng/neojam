@@ -403,6 +403,7 @@ void objectNotifyAll(Object *obj) {
 }
 
 void initialiseMonitor() {
+    // zeng: monitor 哈希表
     initHashTable(mon_cache, HASHTABSZE);
 }
 

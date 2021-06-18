@@ -320,7 +320,7 @@ typedef struct line_no_table_entry {
 
 typedef struct class {
    unsigned int lock;
-   struct class *class;
+   struct class *class; // zeng: TODO 这个指针做什么
 } Class;
 
 typedef struct object {

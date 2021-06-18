@@ -175,6 +175,7 @@ u4 *resolveNativeWrapper(Class *class, MethodBlock *mb, u4 *ostack) {
 }
 
 void initialiseDll() {
+    // zeng: jni 哈希表 - 分配内存 初始化
 #ifndef NO_JNI
     initHashTable(hash_table, HASHTABSZE);
 #endif
@@ -222,13 +223,14 @@ int resolveDll(char *name) {
         if(dll == NULL)
             return -1;
 
+        // zeng: 设置jni c方法信息
         dll->name = strcpy((char*)malloc(strlen(name)+1), name);
-	dll->handle = handle;
+        dll->handle = handle;
 
-#undef HASH
-#undef COMPARE
-#define HASH(ptr) dllNameHash(ptr->name)
-#define COMPARE(ptr1, ptr2, hash1, hash2) \
+        #undef HASH
+        #undef COMPARE
+        #define HASH(ptr) dllNameHash(ptr->name)
+        #define COMPARE(ptr1, ptr2, hash1, hash2) \
                   ((hash1 == hash2) && (strcmp(ptr1->name, ptr2->name) == 0))
 
         findHashEntry(hash_table, dll, dll2, TRUE, FALSE);
