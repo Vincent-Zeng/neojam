@@ -38,6 +38,7 @@
 
 #define JA_SINGLE(args, sp)  *sp++ = *(u4*)args; args++
 
+// zeng: TODO
 void *executeMethodArgs(Object *ob, Class *class, MethodBlock *mb, ...) {
     va_list jargs;
     void *ret;

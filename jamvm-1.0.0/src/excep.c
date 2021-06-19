@@ -27,6 +27,7 @@ Object *exceptionOccured() {
    return getExecEnv()->exception; 
 }
 
+// zeng: TODO
 void signalException(char *excep_name, char *message) {
     if(VM_initing) {
         fprintf(stderr, "Exception occurred while VM initialising.\n");

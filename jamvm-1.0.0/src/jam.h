@@ -475,6 +475,8 @@ extern Class *findArrayClassFromClassLoader(char *, Object *);
 #define findArrayClass(name) findArrayClassFromClassLoader(name, NULL)
 
 extern Class *findClassFromClassLoader(char *, Object *);
+
+// zeng: 通过class去加载另一个classname时, 加载的classloader使用该class的classloader
 #define findClassFromClass(name, class) \
                     findClassFromClassLoader(name, CLASS_CB(class)->class_loader)
 
@@ -499,6 +501,7 @@ extern void *executeMethodArgs(Object *ob, Class *class, MethodBlock *mb, ...);
 extern void *executeMethodVaList(Object *ob, Class *class, MethodBlock *mb, va_list args);
 extern void *executeMethodList(Object *ob, Class *class, MethodBlock *mb, u8 *args);
 
+// zeng: TODO
 #define executeMethod(ob, mb, args...) \
     executeMethodArgs(ob, ob->class, mb, ##args)
 

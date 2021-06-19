@@ -83,6 +83,7 @@ static Class *addClassToHash(Class *class) {
     Class *entry;
 
 #define HASH(ptr) utf8Hash(CLASS_CB((Class *)ptr)->name)
+    // zeng: 说明类的全限定名 和类的 classloader 一样 才是同一个class
 #define COMPARE(ptr1, ptr2, hash1, hash2) (hash1 == hash2) && \
                      utf8Comp(CLASS_CB((Class *)ptr1)->name, CLASS_CB((Class *)ptr2)->name) && \
                      (CLASS_CB((Class*)ptr1)->class_loader == CLASS_CB((Class *)ptr2)->class_loader)
@@ -134,7 +135,7 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
     constant_pool->info = (ConstantPoolEntry *)
             malloc(cp_count * sizeof(ConstantPoolEntry));
 
-        // zeng: `解析并设置常量`
+    // zeng: `解析并设置常量` i从1开始 也就是constant_pool第一项没有使用
     for (i = 1; i < cp_count; i++) {
         u1 tag;
 
@@ -147,7 +148,7 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
             case CONSTANT_Class:
             case CONSTANT_String:
                 // zeng: info为constant_pool数组的index
-                READ_INDEX(CP_INFO(constant_pool, i), ptr, len);
+            READ_INDEX(CP_INFO(constant_pool, i), ptr, len);
                 break;
 
             case CONSTANT_Fieldref:
@@ -165,31 +166,38 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
 
             case CONSTANT_Integer:
             case CONSTANT_Float:
+                // zeng: info为int 或 float值
             READ_U4(CP_INFO(constant_pool, i), ptr, len);
                 break;
 
             case CONSTANT_Long:
             case CONSTANT_Double:
+                // zeng: Long Double在constant_pool中占两个位置, 字节码中cp_count的值已经考虑到了这点
             READ_U8(*(u8 *) &(CP_INFO(constant_pool, i)), ptr, len);
                 i++;
+
                 break;
 
             case CONSTANT_Utf8: {
                 int length;
                 unsigned char *buff, *utf8;
-
+                // zeng: 读取字符串长度赋值为length
                 READ_U2(length, ptr, len);
                 // zeng: 字符串是malloc另外分配的
                 buff = (unsigned char *) malloc(length + 1);
-
+                // zeng: 复制字节码中的字符串到buff
                 memcpy(buff, ptr, length);
+                // zeng: buff以`\0`结尾,表示字符串
                 buff[length] = '\0';
                 ptr += length;
 
-                //CP_INFO(constant_pool,i) = (u4)utf8 = findUtf8String(buff);
+                // zeng: 该字符串是否在字符串hash表中已存在
+                // CP_INFO(constant_pool,i) = (u4)utf8 = findUtf8String(buff);
                 utf8 = findUtf8String(buff);
+                // zeng: 将字符串地址赋值给info
                 CP_INFO(constant_pool, i) = (u4) utf8;
 
+                // zeng: 如果该字符串是从hash表中取得的,则不free
                 if (utf8 != buff)
                     free(buff);
 
@@ -202,168 +210,221 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
         }
     }
 
+    // zeng: 读取访问标记, 这16个bit中记录了`这个Class是类还是接口、是否定义为public类型、是否定义为abstract类型等`
     READ_U2(classblock->access_flags, ptr, len);
 
+    // zeng: 读取这个class文件中的类的CONSTANT_Class在constant_pool数组中的index
     READ_TYPE_INDEX(this_idx, constant_pool, CONSTANT_Class, ptr, len);
+    // zeng: 通过CONSTANT_Class中的info得到类的全限定名, 赋值给name
     classblock->name = CP_UTF8(constant_pool, CP_CLASS(constant_pool, this_idx));
 
-    if (strcmp(classblock->name, "java/lang/Object") == 0) {
+    if (strcmp(classblock->name, "java/lang/Object") == 0) { // zeng: 如果是Object类
         READ_U2(super_idx, ptr, len);
+        // zeng: 读取到的index不为0
         if (super_idx) {
             signalException("java/lang/ClassFormatError", "Object has super");
             return NULL;
         }
         classblock->super_name = NULL;
     } else {
+        // zeng: 读取这个class文件中的类所继承的类的CONSTANT_Class在constant_pool数组中的index
         READ_TYPE_INDEX(super_idx, constant_pool, CONSTANT_Class, ptr, len);
+        // zeng: 通过CONSTANT_Class中的info得到类的全限定名, 赋值给super_name
         classblock->super_name = CP_UTF8(constant_pool, CP_CLASS(constant_pool, super_idx));
     }
 
+    // zeng: 设置class_loader
     classblock->class_loader = class_loader;
 
+    // zeng: implements的接口数量
     READ_U2(intf_count = classblock->interfaces_count, ptr, len);
+    // zeng: 这里用的是`sizeof(Class *)` 即指针的大小 所以只用来保存Class的地址
     interfaces = classblock->interfaces =
             (Class **) malloc(intf_count * sizeof(Class *));
 
     for (i = 0; i < intf_count; i++) {
         u2 index;
+        // zeng: 接口的CONSTANT_Class在constant_pool数组中的index
         READ_TYPE_INDEX(index, constant_pool, CONSTANT_Class, ptr, len);
+        // zeng: 传入`当前类的class` 与 `接口的CONSTANT_Class在constant_pool数组中的index`, 返回新解析的类的Class地址
         interfaces[i] = resolveClass(class, index, FALSE);
         if (exceptionOccured())
             return NULL;
     }
 
+    // zeng: 字段数
     READ_U2(classblock->fields_count, ptr, len);
+    // zeng: 为FieldBlock数组分配空间
     classblock->fields = (FieldBlock *)
             malloc(classblock->fields_count * sizeof(FieldBlock));
 
     for (i = 0; i < classblock->fields_count; i++) {
         u2 name_idx, type_idx;
 
+        // zeng: 读取并设置access_flags
         READ_U2(classblock->fields[i].access_flags, ptr, len);
+
+        // zeng: 读取 字段名称`name` 和 字段描述符`type`
         READ_TYPE_INDEX(name_idx, constant_pool, CONSTANT_Utf8, ptr, len);
         READ_TYPE_INDEX(type_idx, constant_pool, CONSTANT_Utf8, ptr, len);
         classblock->fields[i].name = CP_UTF8(constant_pool, name_idx);
         classblock->fields[i].type = CP_UTF8(constant_pool, type_idx);
 
+        // zeng: 读取 字段 属性数
         READ_U2(attr_count, ptr, len);
         for (; attr_count != 0; attr_count--) {
             u2 attr_name_idx;
             char *attr_name;
             u4 attr_length;
 
+            // zeng: 属性名
             READ_TYPE_INDEX(attr_name_idx, constant_pool, CONSTANT_Utf8, ptr, len);
             attr_name = CP_UTF8(constant_pool, attr_name_idx);
+            // zeng: 属性值长度
             READ_U4(attr_length, ptr, len);
 
+            // zeng: 如果使用final和static同时修饰一个field字段，并且这个字段是基本类型或者String类型的，那么编译器在编译这个字段的时候，会在对应的field_info结构体中增加一个ConstantValue类型的结构体，在赋值的时候使用这个ConstantValue进行赋值；如果该field字段并没有被final修饰，或者不是基本类型或者String类型，那么将在类构造方法<cinit>()中赋值。
             if (strcmp(attr_name, "ConstantValue") == 0) {
+                // constant 为该常量值 在constant_pool中的index
                 READ_INDEX(classblock->fields[i].constant, ptr, len);
-            } else
+            } else // zeng: 似乎走不到这里? 为了容错?
                 ptr += attr_length;
         }
     }
 
+    // zeng: 方法数
     READ_U2(classblock->methods_count, ptr, len);
 
+    // zeng: 分配MethodBlock数组
     classblock->methods = (MethodBlock *)
             malloc(classblock->methods_count * sizeof(MethodBlock));
 
+    // zeng: 分配的内存置0
     memset(classblock->methods, 0, classblock->methods_count * sizeof(MethodBlock));
 
     for (i = 0; i < classblock->methods_count; i++) {
         MethodBlock *method = &classblock->methods[i];
         u2 name_idx, type_idx;
 
+        // zeng: 读取并设置access_flags
         READ_U2(method->access_flags, ptr, len);
+
+        // zeng: 读取并设置方法名称`name`和方法描述符`type`
         READ_TYPE_INDEX(name_idx, constant_pool, CONSTANT_Utf8, ptr, len);
         READ_TYPE_INDEX(type_idx, constant_pool, CONSTANT_Utf8, ptr, len);
-
         method->name = CP_UTF8(constant_pool, name_idx);
         method->type = CP_UTF8(constant_pool, type_idx);
 
+        // zeng: 读取并设置属性数
         READ_U2(attr_count, ptr, len);
+
+        // zeng: 属性表, 包括以下几种:
+        // 这个方法的代码实现，即方法的可执行的机器指令
+        // 这个方法声明的要抛出的异常信息
+        // 这个方法是否被@deprecated注解表示
+        // 这个方法是否是编译器自动生成的
         for (; attr_count != 0; attr_count--) {
             u2 attr_name_idx;
             char *attr_name;
             u4 attr_length;
 
+            // zeng: 读取属性名 和 属性长度
             READ_TYPE_INDEX(attr_name_idx, constant_pool, CONSTANT_Utf8, ptr, len);
             READ_U4(attr_length, ptr, len);
             attr_name = CP_UTF8(constant_pool, attr_name_idx);
 
-            if (strcmp(attr_name, "Code") == 0) {
+            if (strcmp(attr_name, "Code") == 0) {   // zeng: 属性是Code
                 u4 code_length;
                 u2 code_attr_cnt;
                 int j;
 
+                // zeng: 操作数栈大小
                 READ_U2(method->max_stack, ptr, len);
+                // zeng: 局部变量表大小
                 READ_U2(method->max_locals, ptr, len);
-
+                // zeng: 指令长度
                 READ_U4(code_length, ptr, len);
+                // zeng: 为指令分配空间
                 method->code = (char *) malloc(code_length);
+                // zeng: 读取并设置指令
                 memcpy(method->code, ptr, code_length);
                 ptr += code_length;
 
+                // zeng: 方法中的try catch信息
                 READ_U2(method->exception_table_size, ptr, len);
+                // zeng: 为try catch信息数组分配空间
                 method->exception_table = (ExceptionTableEntry *)
                         malloc(method->exception_table_size * sizeof(ExceptionTableEntry));
+
 
                 for (j = 0; j < method->exception_table_size; j++) {
                     ExceptionTableEntry *entry = &method->exception_table[j];
 
+                    // zeng: 如果字节码从第start_pc行到第end_pc行之间出现了catch_type所描述的异常类型，那么将跳转到handler_pc行继续处理
                     READ_U2(entry->start_pc, ptr, len);
                     READ_U2(entry->end_pc, ptr, len);
                     READ_U2(entry->handler_pc, ptr, len);
                     READ_U2(entry->catch_type, ptr, len);
                 }
 
+                // zeng: 指令属性长度
                 READ_U2(code_attr_cnt, ptr, len);
                 for (; code_attr_cnt != 0; code_attr_cnt--) {
                     u2 attr_name_idx;
                     u4 attr_length;
 
+                    // zeng:属性名
                     READ_U2(attr_name_idx, ptr, len);
                     READ_U4(attr_length, ptr, len);
                     attr_name = CP_UTF8(constant_pool, attr_name_idx);
 
-                    if (strcmp(attr_name, "LineNumberTable") == 0) {
+                    if (strcmp(attr_name, "LineNumberTable") == 0) {    // zeng: pc 和 源码行 的对应关系数组
+                        // zeng: 关系数组长度
                         READ_U2(method->line_no_table_size, ptr, len);
+                        // zeng: 分配关系数组空间
                         method->line_no_table = (LineNoTableEntry *)
                                 malloc(method->line_no_table_size * sizeof(LineNoTableEntry));
 
                         for (j = 0; j < method->line_no_table_size; j++) {
                             LineNoTableEntry *entry = &method->line_no_table[j];
 
+                            // zeng: pc
                             READ_U2(entry->start_pc, ptr, len);
+                            // zeng: 源码行
                             READ_U2(entry->line_no, ptr, len);
                         }
                     } else
                         ptr += attr_length;
                 }
-            } else if (strcmp(attr_name, "Exceptions") == 0) {
+            } else if (strcmp(attr_name, "Exceptions") == 0) {  // zeng: 属性是Exceptions
                 int j;
 
+                // zeng: 这个方法声明throws了几个exception
                 READ_U2(method->throw_table_size, ptr, len);
+                // zeng: 只有2个字节 因为存放异常类CONSTANT_Class在constant_pool中的index
                 method->throw_table = (u2 *) malloc(method->throw_table_size * sizeof(u2));
                 for (j = 0; j < method->throw_table_size; j++) {
+                    // zeng: 读取并设置index
                     READ_U2(method->throw_table[j], ptr, len);
                 }
-            } else
+            } else  // zeng: 走不到 容错?
                 ptr += attr_length;
         }
     }
 
+    // zeng: 本class的属性
     READ_U2(attr_count, ptr, len);
     for (; attr_count != 0; attr_count--) {
         u2 attr_name_idx;
         char *attr_name;
         u4 attr_length;
 
+        // zeng: 属性名
         READ_U2(attr_name_idx, ptr, len);
         READ_U4(attr_length, ptr, len);
         attr_name = CP_UTF8(constant_pool, attr_name_idx);
 
-        if (strcmp(attr_name, "SourceFile") == 0) {
+        if (strcmp(attr_name, "SourceFile") == 0) { // zeng: 源码文件名
             u2 file_name_idx;
             READ_U2(file_name_idx, ptr, len);
             classblock->source_file_name = CP_UTF8(constant_pool, file_name_idx);
@@ -371,18 +432,23 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
             ptr += attr_length;
     }
 
+    // zeng: 类状态
     classblock->flags = CLASS_LOADED;
 
+    // zeng: 放入class hash表
     found = addClassToHash(class);
 
+    // zeng: 之前已经加载过了
     if (found != class)
         return found;
 
+    // zeng: 加载super类并将super class的地址赋值给super
     classblock->super = super_idx ? resolveClass(class, super_idx, FALSE) : NULL;
 
     if (exceptionOccured())
         return NULL;
 
+    // zeng: class -> class 为 java/lang/Class类 TODO Class类怎么用的?
     if (strcmp(classblock->name, "java/lang/Class") == 0)
         class->class = class;
     else {
@@ -773,6 +839,7 @@ Class *findArrayClassFromClassLoader(char *classname, Object *class_loader) {
     Class *class = findHashedClass(classname, class_loader);
 
     if (class == NULL)
+        // zeng: TODO 创建数组类
         class = createArrayClass(classname, class_loader);
 
     return class;
@@ -792,17 +859,24 @@ Class *findPrimClass(char *classname) {
 }
 
 Class *findClassFromClassLoader(char *classname, Object *loader) {
+    // zeng: 如果是数组
     if (*classname == '[')
         return findArrayClassFromClassLoader(classname, loader);
 
+    // zeng: 如果classloader不为空
     if (loader != NULL) {
         Class *class;
+        // zeng: 将全限行名中的/替换为.
         char *dot_name = slash2dots(classname);
+        // zeng: 获取classloader.loadClass方法
         MethodBlock *mb = lookupMethod(loader->class,
                                        "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+        // zeng: TODO 为什么要createString
         Object *string = createString(dot_name);
+
         free(dot_name);
 
+        // zeng: 执行classloader.loadClass方法
         class = *(Class **) executeMethod(loader, mb, string);
 
         if (exceptionOccured())
@@ -811,6 +885,7 @@ Class *findClassFromClassLoader(char *classname, Object *loader) {
         return class;
     }
 
+    // zeng: 如果classloader为空
     return findSystemClass0(classname);
 }
 

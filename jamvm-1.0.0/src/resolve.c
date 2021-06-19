@@ -22,15 +22,15 @@
 #include "jam.h"
 
 MethodBlock *findMethod(Class *class, char *methodname, char *type) {
-   ClassBlock *cb = CLASS_CB(class);
-   MethodBlock *mb = cb->methods;
-   int i;
+    ClassBlock *cb = CLASS_CB(class);
+    MethodBlock *mb = cb->methods;
+    int i;
 
-   for(i = 0; i < cb->methods_count; i++,mb++)
-       if((strcmp(mb->name, methodname) == 0) && (strcmp(mb->type, type) == 0))
-          return mb;
+    for (i = 0; i < cb->methods_count; i++, mb++)
+        if ((strcmp(mb->name, methodname) == 0) && (strcmp(mb->type, type) == 0))
+            return mb;
 
-   return NULL;
+    return NULL;
 }
 
 /* A class can't have two fields with the same name but different types - 
@@ -41,21 +41,22 @@ FieldBlock *findField(Class *class, char *fieldname, char *type) {
     FieldBlock *fb = cb->fields;
     int i;
 
-    for(i = 0; i < cb->fields_count; i++,fb++)
-       if(strcmp(fb->name, fieldname) == 0)
-          if(strcmp(fb->type, type) == 0)
-              return fb;
-          else
-	      return NULL;
+    for (i = 0; i < cb->fields_count; i++, fb++)
+        if (strcmp(fb->name, fieldname) == 0)
+            if (strcmp(fb->type, type) == 0)
+                return fb;
+            else
+                return NULL;
 
     return NULL;
 }
 
+// zeng: TODO
 MethodBlock *lookupMethod(Class *class, char *methodname, char *type) {
     MethodBlock *mb;
 
-    if(mb = findMethod(class, methodname, type))
-       return mb;
+    if (mb = findMethod(class, methodname, type))
+        return mb;
 
     if (CLASS_CB(class)->super)
         return lookupMethod(CLASS_CB(class)->super, methodname, type);
@@ -66,8 +67,8 @@ MethodBlock *lookupMethod(Class *class, char *methodname, char *type) {
 FieldBlock *lookupField(Class *class, char *fieldname, char *type) {
     FieldBlock *fb;
 
-    if(fb = findField(class, fieldname, type))
-       return fb;
+    if (fb = findField(class, fieldname, type))
+        return fb;
 
     if (CLASS_CB(class)->super)
         return lookupField(CLASS_CB(class)->super, fieldname, type);
@@ -76,43 +77,50 @@ FieldBlock *lookupField(Class *class, char *fieldname, char *type) {
 }
 
 Class *resolveClass(Class *class, int cp_index, int init) {
+    // zeng: class中的constant_pool
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
     Class *resolved_class;
 
-retry:
-    switch(CP_TYPE(cp, cp_index)) {
-	case CONSTANT_Locked:
-	    goto retry;
+    retry:
+    switch (CP_TYPE(cp, cp_index)) {
+        case CONSTANT_Locked:
+            goto retry;
 
         case CONSTANT_Resolved:
-            resolved_class = (Class *)CP_INFO(cp, cp_index);
-	    break;
+            resolved_class = (Class *) CP_INFO(cp, cp_index);
+            break;
 
-	case CONSTANT_Class: {
-	    char *classname;
+        case CONSTANT_Class: {
+            char *classname;
+            // zeng: 获取全限定名在constant_pool中的index
             int name_idx = CP_CLASS(cp, cp_index);
 
-	    if(CP_TYPE(cp, cp_index) != CONSTANT_Class)
+            if (CP_TYPE(cp, cp_index) != CONSTANT_Class)
                 goto retry;
 
+            // zeng: 获取全限定名
             classname = CP_UTF8(cp, name_idx);
+
+            // zeng: 通过class去加载另一个classname TODO
             resolved_class = findClassFromClass(classname, class);
 
             /* If we can't find the class an exception will already have
                been thrown */
 
-            if(resolved_class == NULL)
+            if (resolved_class == NULL)
                 return NULL;
 
             CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-            CP_INFO(cp, cp_index) = (u4)resolved_class;
+            // zeng: info设置为class的地址
+            CP_INFO(cp, cp_index) = (u4) resolved_class;
+            // zeng: 设置type为20表示info已从符号引用替换成直接引用
             CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
 
-	    break;
+            break;
         }
     }
 
-    if(init)
+    if (init)
         initClass(resolved_class);
 
     return resolved_class;
@@ -122,41 +130,41 @@ MethodBlock *resolveMethod(Class *class, int cp_index) {
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
     MethodBlock *mb;
 
-retry:
-    switch(CP_TYPE(cp, cp_index)) {
-	case CONSTANT_Locked:
-	    goto retry;
+    retry:
+    switch (CP_TYPE(cp, cp_index)) {
+        case CONSTANT_Locked:
+            goto retry;
 
         case CONSTANT_Resolved:
-            mb = (MethodBlock *)CP_INFO(cp, cp_index);
-	    break;
+            mb = (MethodBlock *) CP_INFO(cp, cp_index);
+            break;
 
         case CONSTANT_Methodref: {
-	    Class *resolved_class;
+            Class *resolved_class;
             char *methodname, *methodtype;
             int cl_idx = CP_METHOD_CLASS(cp, cp_index);
             int name_type_idx = CP_METHOD_NAME_TYPE(cp, cp_index);
 
-	    if(CP_TYPE(cp, cp_index) != CONSTANT_Methodref)
+            if (CP_TYPE(cp, cp_index) != CONSTANT_Methodref)
                 goto retry;
 
             methodname = CP_UTF8(cp, CP_NAME_TYPE_NAME(cp, name_type_idx));
             methodtype = CP_UTF8(cp, CP_NAME_TYPE_TYPE(cp, name_type_idx));
             resolved_class = resolveClass(class, cl_idx, TRUE);
 
-            if(exceptionOccured())
+            if (exceptionOccured())
                 return NULL;
 
             mb = lookupMethod(resolved_class, methodname, methodtype);
 
-            if(mb) {
+            if (mb) {
                 CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-                CP_INFO(cp, cp_index) = (u4)mb;
+                CP_INFO(cp, cp_index) = (u4) mb;
                 CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
             } else
                 signalException("java/lang/NoSuchMethodError", methodname);
 
-	    break;
+            break;
         }
     }
 
@@ -167,41 +175,41 @@ MethodBlock *resolveInterfaceMethod(Class *class, int cp_index) {
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
     MethodBlock *mb;
 
-retry:
-    switch(CP_TYPE(cp, cp_index)) {
-	case CONSTANT_Locked:
-	    goto retry;
+    retry:
+    switch (CP_TYPE(cp, cp_index)) {
+        case CONSTANT_Locked:
+            goto retry;
 
         case CONSTANT_Resolved:
-            mb = (MethodBlock *)CP_INFO(cp, cp_index);
-	    break;
+            mb = (MethodBlock *) CP_INFO(cp, cp_index);
+            break;
 
         case CONSTANT_InterfaceMethodref: {
-	    Class *resolved_class;
+            Class *resolved_class;
             char *methodname, *methodtype;
             int cl_idx = CP_METHOD_CLASS(cp, cp_index);
             int name_type_idx = CP_METHOD_NAME_TYPE(cp, cp_index);
 
-	    if(CP_TYPE(cp, cp_index) != CONSTANT_InterfaceMethodref)
+            if (CP_TYPE(cp, cp_index) != CONSTANT_InterfaceMethodref)
                 goto retry;
 
             methodname = CP_UTF8(cp, CP_NAME_TYPE_NAME(cp, name_type_idx));
             methodtype = CP_UTF8(cp, CP_NAME_TYPE_TYPE(cp, name_type_idx));
             resolved_class = resolveClass(class, cl_idx, TRUE);
 
-            if(exceptionOccured())
+            if (exceptionOccured())
                 return NULL;
 
             mb = lookupMethod(resolved_class, methodname, methodtype);
 
-            if(mb) {
+            if (mb) {
                 CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-                CP_INFO(cp, cp_index) = (u4)mb;
+                CP_INFO(cp, cp_index) = (u4) mb;
                 CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
             } else
                 signalException("java/lang/NoSuchMethodError", methodname);
 
-	    break;
+            break;
         }
     }
 
@@ -212,64 +220,64 @@ FieldBlock *resolveField(Class *class, int cp_index) {
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
     FieldBlock *fb;
 
-retry:
-    switch(CP_TYPE(cp, cp_index)) {
-	case CONSTANT_Locked:
-	    goto retry;
+    retry:
+    switch (CP_TYPE(cp, cp_index)) {
+        case CONSTANT_Locked:
+            goto retry;
 
         case CONSTANT_Resolved:
-            fb = (FieldBlock *)CP_INFO(cp, cp_index);
-	    break;
+            fb = (FieldBlock *) CP_INFO(cp, cp_index);
+            break;
 
         case CONSTANT_Fieldref: {
-	    Class *resolved_class;
+            Class *resolved_class;
             char *fieldname, *fieldtype;
             int cl_idx = CP_FIELD_CLASS(cp, cp_index);
             int name_type_idx = CP_FIELD_NAME_TYPE(cp, cp_index);
 
-	    if(CP_TYPE(cp, cp_index) != CONSTANT_Fieldref)
+            if (CP_TYPE(cp, cp_index) != CONSTANT_Fieldref)
                 goto retry;
 
             fieldname = CP_UTF8(cp, CP_NAME_TYPE_NAME(cp, name_type_idx));
             fieldtype = CP_UTF8(cp, CP_NAME_TYPE_TYPE(cp, name_type_idx));
             resolved_class = resolveClass(class, cl_idx, TRUE);
 
-            if(exceptionOccured())
+            if (exceptionOccured())
                 return NULL;
 
             fb = lookupField(resolved_class, fieldname, fieldtype);
 
-            if(fb) {
+            if (fb) {
                 CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-                CP_INFO(cp, cp_index) = (u4)fb;
+                CP_INFO(cp, cp_index) = (u4) fb;
                 CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
             } else
                 signalException("java/lang/NoSuchFieldError", fieldname);
 
-	    break;
+            break;
         }
     }
- 
+
     return fb;
 }
 
 u4 resolveSingleConstant(Class *class, int cp_index) {
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
 
-retry:
-    switch(CP_TYPE(cp, cp_index)) {
-	case CONSTANT_Locked:
-	    goto retry;
+    retry:
+    switch (CP_TYPE(cp, cp_index)) {
+        case CONSTANT_Locked:
+            goto retry;
 
-	case CONSTANT_String: {
+        case CONSTANT_String: {
             Object *string;
             int idx = CP_STRING(cp, cp_index);
-            if(CP_TYPE(cp, cp_index) != CONSTANT_String)
+            if (CP_TYPE(cp, cp_index) != CONSTANT_String)
                 goto retry;
 
             string = createString(CP_UTF8(cp, idx));
             CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-            CP_INFO(cp, cp_index) = (u4)findInternedString(string);
+            CP_INFO(cp, cp_index) = (u4) findInternedString(string);
             CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
             break;
         }
@@ -277,6 +285,6 @@ retry:
         default:
             break;
     }
-    
+
     return CP_INFO(cp, cp_index);
 }
