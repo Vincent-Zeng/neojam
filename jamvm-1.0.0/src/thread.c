@@ -193,20 +193,26 @@ ExecEnv *getExecEnv() {
 void initialiseJavaStack(ExecEnv *ee) {
     // zeng: 用malloc分配栈空间, 返回空间开始地址
    char *stack = malloc(java_stack_size);
-   // zeng: 在栈空间里分配一个methodblock TODO 这个数据结构是干啥的
+   // zeng: 在栈空间里分配一个MethodBlock
    MethodBlock *mb = (MethodBlock *) stack;
-   // zeng: 接着分配一个frame TODO 这个数据结构是干啥的
+   // zeng: 接下来的地址分配main方法的stack frame
    Frame *top = (Frame *) (mb+1);
 
+   // zeng: TODO main方法不需要操作数栈?
    mb->max_stack = 0;
+
+   // zeng: 设置main方法 stack frame中的MethodBlock
    top->mb = mb;
-   // zeng: 接着的栈地址赋值给ostack
+
+   // zeng: frame结构接下来的栈地址赋值给ostack 也就是frame结构中只保存ostack地址 ostack空间在栈空间里frame结构接下来的地址下分配
+   // zeng: TODO main栈帧没有本地变量 和 操作数栈? 这里设置ostack因为ostack是栈帧最后一个数据结构 方便定位栈帧结尾?
    top->ostack = (u4*)(top+1);
+
    top->prev = 0;
 
    // zeng: 设置执行上下文中的栈开始地址
    ee->stack = stack;
-   // zeng: 最近的stack frame
+   // zeng: 置为 最近的stack frame
    ee->last_frame = top;
    // zeng: 设置执行上下文中的栈结束地址
    ee->stack_end = stack + java_stack_size-1024;

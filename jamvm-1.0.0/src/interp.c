@@ -268,6 +268,7 @@ label(opcode)
     break;
 #endif
 
+// zeng: TODO
 u4 *executeJava() {
     ExecEnv *ee = getExecEnv();
     Frame *frame = ee->last_frame;

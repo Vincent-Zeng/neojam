@@ -118,7 +118,7 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
     READ_U2(minor_version, ptr, len);
     READ_U2(major_version, ptr, len);
 
-    // zeng: 分配一个Class + ClassBlock的空间 返回Class地址
+    // zeng: 分配一个Class + ClassBlock的空间 返回Class对象地址
     class = allocClass();
     if (class == NULL)
         return NULL;
@@ -148,7 +148,7 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
             case CONSTANT_Class:
             case CONSTANT_String:
                 // zeng: info为constant_pool数组的index
-            READ_INDEX(CP_INFO(constant_pool, i), ptr, len);
+                READ_INDEX(CP_INFO(constant_pool, i), ptr, len);
                 break;
 
             case CONSTANT_Fieldref:

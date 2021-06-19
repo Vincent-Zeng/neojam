@@ -43,8 +43,10 @@ void *executeMethodArgs(Object *ob, Class *class, MethodBlock *mb, ...) {
     va_list jargs;
     void *ret;
 
+    // zeng: 初始化可变参数获取
     va_start(jargs, mb);
     ret = executeMethodVaList(ob, class, mb, jargs);
+    // zeng: 结束可变参数获取
     va_end(jargs);
 
     return ret;
@@ -54,31 +56,40 @@ void *executeMethodVaList(Object *ob, Class *class, MethodBlock *mb, va_list jar
     ClassBlock *cb = CLASS_CB(class);
     char *sig = mb->type;
 
+    // zeng: 获取当前线程的执行上下文
     ExecEnv *ee = getExecEnv();
+
     void *ret;
     u4 *sp;
 
+    // zeng: 分配新的栈帧 sp是新栈帧中的本地变量数组的地址 TODO 其实是返回值地址的地址?
     CREATE_TOP_FRAME(ee, class, mb, sp, ret);
 
     /* copy args onto stack */
 
+    // zeng: 如果是调用实例方法 将实例对象地址作为第一个参数保存到本地变量数组中
     if(ob)
         *sp++ = (u4) ob; /* push receiver first */
 
+    // zeng: 从方法描述符中读取参数类型 然后根据类型从可变参数中得到值并依次保存到本地变量数组中
     SCAN_SIG(sig, VA_DOUBLE(jargs, sp), VA_SINGLE(jargs, sp))
 
+    // zeng: 如果是synchronized方法 则等待class锁
     if(mb->access_flags & ACC_SYNCHRONIZED)
         objectLock(ob ? ob : (Object*)mb->class);
 
-    if(mb->access_flags & ACC_NATIVE)
+    if(mb->access_flags & ACC_NATIVE)   // zeng: 如果是本地方法 则调用native_invoker TODO
         (*(u4 *(*)(Class*, MethodBlock*, u4*))mb->native_invoker)(class, mb, ret);
     else
-        executeJava();
+        executeJava();  // zeng: 解释执行
 
+    // zeng: 释放class锁
     if(mb->access_flags & ACC_SYNCHRONIZED)
         objectUnlock(ob ? ob : (Object*)mb->class);
 
+    // zeng: 返回到上一个方法的栈帧
     POP_TOP_FRAME(ee);
+
     return ret;
 }
 
