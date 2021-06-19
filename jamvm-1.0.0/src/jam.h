@@ -371,11 +371,11 @@ typedef struct classblock {
    u2 constant_pool_count;
    int object_size;
    FieldBlock *fields;
-   MethodBlock *methods;
+   MethodBlock *methods;    // zeng: class文件中的方法
    Class **interfaces;
    ConstantPool constant_pool;
    int method_table_size;
-   MethodBlock **method_table;
+   MethodBlock **method_table;  // zeng: 包括祖先类的方法, 不包括private static init方法
    MethodBlock *finalizer;
    Class *element_class;
    int initing_tid;
@@ -505,6 +505,7 @@ extern void *executeMethodList(Object *ob, Class *class, MethodBlock *mb, u8 *ar
 #define executeMethod(ob, mb, args...) \
     executeMethodArgs(ob, ob->class, mb, ##args)
 
+// zeng: TODO
 #define executeStaticMethod(clazz, mb, args...) \
     executeMethodArgs(NULL, clazz, mb, ##args)
 

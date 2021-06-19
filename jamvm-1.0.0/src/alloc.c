@@ -936,7 +936,7 @@ void initialiseGC(int noasyncgc) {
 }
 
 /* Object allocation routines */
-
+// zeng: TODO
 #define ADD_FINALIZED_OBJECT(ob)                                                   \
 {                                                                                  \
     Thread *self;                                                                  \
@@ -955,23 +955,31 @@ void initialiseGC(int noasyncgc) {
     enableSuspend(self);                                                           \
 }
 
+// zeng: 分配 对象 空间
 Object *allocObject(Class *class) {
     ClassBlock *cb = CLASS_CB(class);
+    // zeng: 对象内容字节数
     int size = cb->object_size * 4;
+
+    // zeng: 对象内容字节数 + Object数据结构大小
     Object *ob = (Object *)gcMalloc(size+sizeof(Object));
 
     if(ob != NULL) {
+        // zeng: object数据结构的class 指向 对象 对应的类
         ob->class = class;
 
+        // zeng: 如果类中有finalize方法
         if(cb->finalizer != NULL)
             ADD_FINALIZED_OBJECT(ob);
 
+        // zeng: 打印分配日志
         TRACE_ALLOC(("<ALLOC: allocated %s object @ 0x%x>\n", cb->name, ob));
     }
 
     return ob;
 }
-    
+
+// zeng: 分配数组对象(元素为对象)空间
 Object *allocArray(Class *class, int size, int el_size) {
     Object *ob;
 
@@ -980,21 +988,29 @@ Object *allocArray(Class *class, int size, int el_size) {
         return NULL;
     }
 
+    // zeng: 分配数组对象空间 返回对象地址 TODO 为什么是这个长度?
     ob = (Object *)gcMalloc(size * el_size + 4 + sizeof(Object));
 
     if(ob != NULL) {
+        // zeng: TODO
         *INST_DATA(ob) = size;
+
+        // zeng: 数组object -> class 为 元素的class
         ob->class = class;
+
+        // zeng: 打印分配日志
         TRACE_ALLOC(("<ALLOC: allocated %s array object @ 0x%x>\n", CLASS_CB(class)->name, ob));
     }
 
     return ob;
 }
 
+// zeng: 分配数组对象(元素为基本类型)空间
 Object *allocTypeArray(int type, int size) {
     Class *class;
     int el_size;
 
+    // zeng: 找到基本类型对应的class
     switch(type) {
         case T_BYTE:
         case T_BOOLEAN:
@@ -1037,6 +1053,7 @@ Object *allocTypeArray(int type, int size) {
             exit(0);
     }
 
+    // zeng: 分配数组对象(元素为对象)空间
     return allocArray(class, size, el_size);
 }
 

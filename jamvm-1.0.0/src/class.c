@@ -460,6 +460,7 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
     return class;
 }
 
+// zeng: TODO
 Class *
 createArrayClass(char *classname, Object *class_loader) {
     Class *class;
@@ -486,6 +487,7 @@ createArrayClass(char *classname, Object *class_loader) {
 
     classblock->flags = CLASS_INTERNAL;
 
+    // zeng: 如果不是基本类型
     if (classname[len - 1] == ';') {
 
         /* Element type is an object rather than a primitive type -
@@ -548,6 +550,7 @@ createPrimClass(char *classname) {
     return class;
 }
 
+// zeng: 链接祖先类的字段和方法
 void linkClass(Class *class) {
     ClassBlock *cb = CLASS_CB(class);
     MethodBlock *mb = cb->methods;
@@ -567,28 +570,31 @@ void linkClass(Class *class) {
     if (verbose)
         printf("[Linking class %s]\n", cb->name);
 
+    // zeng: 先link super class
     if (!(cb->access_flags & ACC_INTERFACE) && cb->super && (CLASS_CB(cb->super)->flags < CLASS_LINKED))
         linkClass(cb->super);
 
+    // zeng: 父类信息
     if (cb->super) {
         offset = CLASS_CB(cb->super)->object_size;
         spr_mthd_tbl = CLASS_CB(cb->super)->method_table;
         spr_mthd_tbl_sze = CLASS_CB(cb->super)->method_table_size;
+        // zeng: 父类的finalize方法作为备选
         finalizer = CLASS_CB(cb->super)->finalizer;
     }
 
     /* prepare fields */
 
     for (i = 0; i < cb->fields_count; i++, fb++) {
-        if (fb->access_flags & ACC_STATIC) {
+        if (fb->access_flags & ACC_STATIC) {    // zeng: static字段
             /* init to default value */
-            if ((*fb->type == 'J') || (*fb->type == 'D'))
-                *(long long *) &fb->static_value = 0;
+            if ((*fb->type == 'J') || (*fb->type == 'D'))   // zeng: 如果是Long或Double
+                *(long long *) &fb->static_value = 0;   // zeng: 和类信息保存在一个空间
             else
                 fb->static_value = 0;
         } else {
             /* calc field offset */
-            fb->offset = offset;
+            fb->offset = offset;    // zeng: TODO 为非static字段分配空间中的offset? 对象空间?
             if ((*fb->type == 'J') || (*fb->type == 'D'))
                 offset += 2;
             else
@@ -596,6 +602,7 @@ void linkClass(Class *class) {
         }
     }
 
+    // zeng: TODO 所有实例变量大小构成对象的个数(以u4为单位)?
     cb->object_size = offset;
 
     /* prepare methods */
@@ -606,26 +613,31 @@ void linkClass(Class *class) {
 
         int count = 0;
         char *sig = mb->type;
+        // zeng: 从描述符中统计参数数量 Double Long都算两个
         SCAN_SIG(sig, count += 2, count++);
 
         if (mb->access_flags & ACC_STATIC)
             mb->args_count = count;
-        else
+        else    // zeng: TODO 非static方法 参数多了一个this?
             mb->args_count = count + 1;
 
+        // zeng: method所属class
         mb->class = class;
 
+        // zeng: native方法
         if (mb->access_flags & ACC_NATIVE) {
 
             /* set up native invoker to wrapper to resolve function
                on first invocation */
 
+            // zeng: native_invoker设置为解析方法,这样第一次调用就是调用解析方法,解析方法中会找到实际方法,并设置native_invoker为实际方法
             mb->native_invoker = (void *) resolveNativeWrapper;
 
             /* native methods have no code attribute so these aren't filled
                in at load time - as these values are used when creating frame
                set to appropriate values */
 
+            // zeng: TODO native方法也会用到本地变量表?
             mb->max_locals = mb->args_count;
             mb->max_stack = 0;
         }
@@ -633,12 +645,13 @@ void linkClass(Class *class) {
         /* Static, private or init methods aren't dynamically invoked, so
       don't stick them in the table to save space */
 
+        // zeng: static private init方法 不用放入method_table中
         if ((mb->access_flags & ACC_STATIC) || (mb->access_flags & ACC_PRIVATE) ||
             (mb->name[0] == '<'))
             continue;
 
         /* if it's overriding an inherited method, replace in method table */
-
+        // zeng: 方法在method_table数组中的index
         if (cb->super &&
             (overridden = lookupMethod(cb->super, mb->name, mb->type)))
             mb->method_table_index = overridden->method_table_index;
@@ -646,23 +659,28 @@ void linkClass(Class *class) {
             mb->method_table_index = spr_mthd_tbl_sze + new_methods_count++;
 
         /* check for finalizer */
-
+        // zeng: 方法是否是void finalize() 如果有 就不用父类的
         if (cb->super && strcmp(mb->name, "finalize") == 0 && strcmp(mb->type, "()V") == 0)
             finalizer = mb;
     }
 
+    // zeng: finalize方法
     cb->finalizer = finalizer;
 
     /* construct method table */
 
+    // zeng: method_table大小 为父类 method_table大小 加上本类 methods大小(不包括static private init方法)
     cb->method_table_size = spr_mthd_tbl_sze + new_methods_count;
+    // zeng: 分配method_table数组空间
     method_table = cb->method_table =
             (MethodBlock **) malloc(cb->method_table_size * sizeof(MethodBlock *));
 
+    // zeng: 复制父类method_table到本类method_table
     memcpy(method_table, spr_mthd_tbl, spr_mthd_tbl_sze * sizeof(MethodBlock *));
 
     /* fill in method table */
 
+    // zeng: 将本类方法写进method_table
     mb = cb->methods;
     for (i = 0; i < cb->methods_count; i++, mb++) {
         if ((mb->access_flags & ACC_STATIC) || (mb->access_flags & ACC_PRIVATE) ||
@@ -671,6 +689,7 @@ void linkClass(Class *class) {
         method_table[mb->method_table_index] = mb;
     }
 
+    // zeng: 更新类状态
     cb->flags = CLASS_LINKED;
 }
 
@@ -682,7 +701,9 @@ Class *initClass(Class *class) {
     Object *excep;
     int i;
 
+    // zeng: 链接class
     linkClass(class);
+
     objectLock((Object *) class);
 
     while (cb->flags == CLASS_INITING)
@@ -700,24 +721,31 @@ Class *initClass(Class *class) {
         return class;
     }
 
+    // zeng: 更新类状态
     cb->flags = CLASS_INITING;
+
+    // zeng: 初始化这个类的 java thread id
     cb->initing_tid = threadSelf()->id;
 
     objectUnlock((Object *) class);
 
+    // zeng: 先初始化父类
     if (!(cb->access_flags & ACC_INTERFACE) && cb->super && (CLASS_CB(cb->super)->flags != CLASS_INITED)) {
         initClass(cb->super);
+
         if (exceptionOccured()) {
             objectLock((Object *) class);
+            // zeng: 初始化失败
             cb->flags = CLASS_BAD;
             goto notify;
         }
     }
 
+    // zeng: 执行 void <clinit>()
     if ((mb = findMethod(class, "<clinit>", "()V")) != NULL)
         executeStaticMethod(class, mb);
 
-    if (excep = exceptionOccured()) {
+    if (excep = exceptionOccured()) {   // zeng: TODO
         Class *error, *eiie;
         Object *ob;
 
@@ -740,6 +768,7 @@ Class *initClass(Class *class) {
         cb->flags = CLASS_BAD;
     } else {
         objectLock((Object *) class);
+        // zeng: 初始化完成
         cb->flags = CLASS_INITED;
     }
 
@@ -819,7 +848,7 @@ Class *findSystemClass0(char *classname) {
     if (class == NULL)
         class = loadSystemClass(classname);
 
-    // zeng: TODO
+    // zeng: 链接class
     if (!exceptionOccured())
         linkClass(class);
 
@@ -830,11 +859,13 @@ Class *findSystemClass(char *classname) {
     Class *class = findSystemClass0(classname);
 
     if (!exceptionOccured())
+        // zeng: 初始化class
         initClass(class);
 
     return class;
 }
 
+// zeng: 根据classname 创建数组类 classname包括以基本类型为元素的数组`[B` `[C` 等
 Class *findArrayClassFromClassLoader(char *classname, Object *class_loader) {
     Class *class = findHashedClass(classname, class_loader);
 

@@ -73,7 +73,7 @@
     if(res) {                                    \
         mon->next = mon_free_list;               \
         mon_free_list = mon;                     \
-	mon->in_use = TRUE;                      \
+    mon->in_use = TRUE;                      \
     }                                            \
     res;                                         \
 })
@@ -93,35 +93,35 @@ void monitorInit(Monitor *mon) {
 }
 
 void monitorLock(Monitor *mon, Thread *self) {
-    if(mon->owner == self)
+    if (mon->owner == self)
         mon->count++;
     else {
         mon->entering++;
-	disableSuspend(self);
-	self->state = WAITING;
+        disableSuspend(self);
+        self->state = WAITING;
         pthread_mutex_lock(&mon->lock);
-	self->state = RUNNING;
-	enableSuspend(self);
+        self->state = RUNNING;
+        enableSuspend(self);
         mon->entering--;
-	mon->owner = self;
+        mon->owner = self;
     }
 }
 
 int monitorTryLock(Monitor *mon, Thread *self) {
-    if(mon->owner == self)
+    if (mon->owner == self)
         mon->count++;
     else {
-        if(pthread_mutex_trylock(&mon->lock))
+        if (pthread_mutex_trylock(&mon->lock))
             return FALSE;
-	mon->owner = self;
+        mon->owner = self;
     }
 
     return TRUE;
 }
 
 void monitorUnlock(Monitor *mon, Thread *self) {
-    if(mon->owner == self)
-        if(mon->count == 0) {
+    if (mon->owner == self)
+        if (mon->count == 0) {
             mon->owner = 0;
             pthread_mutex_unlock(&mon->lock);
         } else
@@ -134,8 +134,8 @@ int monitorWait(Monitor *mon, Thread *self, long long ms, int ns) {
     char timed = (ms != 0) || (ns != 0);
     struct timespec ts;
 
-    if(mon->owner != self)
-	return FALSE;
+    if (mon->owner != self)
+        return FALSE;
 
     /* We own the monitor */
 
@@ -146,15 +146,15 @@ int monitorWait(Monitor *mon, Thread *self, long long ms, int ns) {
     mon->owner = NULL;
     mon->waiting++;
 
-    if(timed) {
+    if (timed) {
         struct timeval tv;
 
         gettimeofday(&tv, 0);
 
-        ts.tv_sec = tv.tv_sec + ms/1000;
-        ts.tv_nsec = (tv.tv_usec + ((ms%1000)*1000))*1000 + ns;
+        ts.tv_sec = tv.tv_sec + ms / 1000;
+        ts.tv_nsec = (tv.tv_usec + ((ms % 1000) * 1000)) * 1000 + ns;
 
-        if(ts.tv_nsec > 999999999L) {
+        if (ts.tv_nsec > 999999999L) {
             ts.tv_sec++;
             ts.tv_nsec -= 1000000000L;
         }
@@ -163,30 +163,29 @@ int monitorWait(Monitor *mon, Thread *self, long long ms, int ns) {
     self->wait_mon = mon;
     self->state = WAITING;
 
-    if(self->interrupted)
+    if (self->interrupted)
         interrupted = TRUE;
     else {
 
-wait_loop:
-        if(timed) {
-            if(pthread_cond_timedwait(&mon->cv, &mon->lock, &ts) == ETIMEDOUT)
+        wait_loop:
+        if (timed) {
+            if (pthread_cond_timedwait(&mon->cv, &mon->lock, &ts) == ETIMEDOUT)
                 goto out;
-	} else
+        } else
             pthread_cond_wait(&mon->cv, &mon->lock);
 
         /* see why we were signalled... */
 
-        if(self->interrupting) {
+        if (self->interrupting) {
             interrupted = TRUE;
             self->interrupting = FALSE;
             mon->interrupting--;
-        } else
-            if(mon->notifying)
-                mon->notifying--;
-            else
-                goto wait_loop;
+        } else if (mon->notifying)
+            mon->notifying--;
+        else
+            goto wait_loop;
     }
-out:
+    out:
 
     self->state = RUNNING;
     self->wait_mon = 0;
@@ -197,7 +196,7 @@ out:
 
     enableSuspend(self);
 
-    if(interrupted) {
+    if (interrupted) {
         self->interrupted = FALSE;
         signalException("java/lang/InterruptedException", NULL);
     }
@@ -206,10 +205,10 @@ out:
 }
 
 int monitorNotify(Monitor *mon, Thread *self) {
-    if(mon->owner != self)
+    if (mon->owner != self)
         return FALSE;
 
-    if((mon->notifying + mon->interrupting) < mon->waiting) {
+    if ((mon->notifying + mon->interrupting) < mon->waiting) {
         mon->notifying++;
         pthread_cond_signal(&mon->cv);
     }
@@ -218,7 +217,7 @@ int monitorNotify(Monitor *mon, Thread *self) {
 }
 
 int monitorNotifyAll(Monitor *mon, Thread *self) {
-    if(mon->owner != self)
+    if (mon->owner != self)
         return FALSE;
 
     mon->notifying = mon->waiting - mon->interrupting;
@@ -230,11 +229,11 @@ int monitorNotifyAll(Monitor *mon, Thread *self) {
 Monitor *allocMonitor(Object *obj) {
     Monitor *mon;
 
-    if(mon_free_list != NULL) {
+    if (mon_free_list != NULL) {
         mon = mon_free_list;
-        mon_free_list = mon->next;	
+        mon_free_list = mon->next;
     } else {
-        mon = (Monitor *)malloc(sizeof(Monitor));
+        mon = (Monitor *) malloc(sizeof(Monitor));
         monitorInit(mon);
         mon->in_use = TRUE;
     }
@@ -244,11 +243,11 @@ Monitor *allocMonitor(Object *obj) {
 Monitor *findMonitor(Object *obj) {
     int lockword = obj->lock;
 
-    if(lockword & SHAPE_BIT)
-        return (Monitor*) (lockword & ~SHAPE_BIT);
+    if (lockword & SHAPE_BIT)
+        return (Monitor *) (lockword & ~SHAPE_BIT);
     else {
         Monitor *mon;
-	findHashEntry(mon_cache, obj, mon, TRUE, TRUE);
+        findHashEntry(mon_cache, obj, mon, TRUE, TRUE);
         return mon;
     }
 }
@@ -260,81 +259,81 @@ void inflate(Object *obj, Monitor *mon, Thread *self) {
     obj->lock = (int) mon | SHAPE_BIT;
 }
 
+// zeng: TODO
 void objectLock(Object *obj) {
     Thread *self = threadSelf();
-    unsigned int thin_locked = self->id<<TID_SHIFT;
+    unsigned int thin_locked = self->id << TID_SHIFT;
     Monitor *mon;
 
     TRACE(("Lock on obj 0x%x...\n", obj));
 
-    if(COMPARE_AND_SWAP(&obj->lock, 0, thin_locked))
+    if (COMPARE_AND_SWAP(&obj->lock, 0, thin_locked))
         return;
 
-    if((obj->lock & (TID_MASK|SHAPE_BIT)) == thin_locked) {
+    if ((obj->lock & (TID_MASK | SHAPE_BIT)) == thin_locked) {
         int count = obj->lock & COUNT_MASK;
 
-	if(count < (((1<<COUNT_SIZE)-1)<<COUNT_SHIFT))
-            obj->lock += 1<<COUNT_SHIFT;
+        if (count < (((1 << COUNT_SIZE) - 1) << COUNT_SHIFT))
+            obj->lock += 1 << COUNT_SHIFT;
         else {
             mon = findMonitor(obj);
             monitorLock(mon, self);
-	    inflate(obj, mon, self);
-	    mon->count = 1<<COUNT_SIZE;
-	}
-	return;
+            inflate(obj, mon, self);
+            mon->count = 1 << COUNT_SIZE;
+        }
+        return;
     }
 
     mon = findMonitor(obj);
     monitorLock(mon, self);
 
-    while((obj->lock & SHAPE_BIT) == 0) {
+    while ((obj->lock & SHAPE_BIT) == 0) {
         set_flc_bit(obj);
 
-	if(COMPARE_AND_SWAP(&obj->lock, 0, self))
+        if (COMPARE_AND_SWAP(&obj->lock, 0, self))
             inflate(obj, mon, self);
-	else
+        else
             monitorWait(mon, self, 0, 0);
     }
 }
 
 void objectUnlock(Object *obj) {
     Thread *self = threadSelf();
-    unsigned int thin_locked = self->id<<TID_SHIFT;
+    unsigned int thin_locked = self->id << TID_SHIFT;
 
     TRACE(("Unlock on obj 0x%x...\n", obj));
 
-    if(obj->lock == thin_locked) {
+    if (obj->lock == thin_locked) {
         obj->lock = 0;
 
-retry:
-	if(test_flc_bit(obj)) {
+        retry:
+        if (test_flc_bit(obj)) {
             Monitor *mon = findMonitor(obj);
 
-            if(!monitorTryLock(mon, self)) {
+            if (!monitorTryLock(mon, self)) {
                 pthread_yield();
                 goto retry;
-	    }
+            }
 
-	    if(test_flc_bit(obj))
+            if (test_flc_bit(obj))
                 monitorNotify(mon, self);
 
             monitorUnlock(mon, self);
-	}
+        }
     } else {
-        if((obj->lock & (TID_MASK|SHAPE_BIT)) == thin_locked)
-            obj->lock -= 1<<COUNT_SHIFT;
-	else
-            if((obj->lock & SHAPE_BIT) != 0) {
-                Monitor *mon = (Monitor*) (obj->lock & ~SHAPE_BIT);
+        if ((obj->lock & (TID_MASK | SHAPE_BIT)) == thin_locked)
+            obj->lock -= 1 << COUNT_SHIFT;
+        else if ((obj->lock & SHAPE_BIT) != 0) {
+            Monitor *mon = (Monitor *) (obj->lock & ~SHAPE_BIT);
 
-	        if((mon->count == 0) && (mon->entering == 0) && (mon->waiting == 0)) {
-                    TRACE(("Deflating obj 0x%x...\n", obj));
-                    obj->lock = 0;
-	            mon->in_use = FALSE;
-	        }
-
-	        monitorUnlock(mon, self);
+            if ((mon->count == 0) && (mon->entering == 0) && (mon->waiting == 0)) {
+                TRACE(("Deflating obj 0x%x...\n", obj));
+                obj->lock = 0;
+                mon->in_use = FALSE;
             }
+
+            monitorUnlock(mon, self);
+        }
     }
 }
 
@@ -345,22 +344,22 @@ void objectWait(Object *obj, long long ms, int ns) {
 
     TRACE(("Wait on obj 0x%x...\n", obj));
 
-    if((lockword & SHAPE_BIT) == 0) {
-        int tid = (lockword&TID_MASK)>>TID_SHIFT;
-	if(tid == self->id) {
+    if ((lockword & SHAPE_BIT) == 0) {
+        int tid = (lockword & TID_MASK) >> TID_SHIFT;
+        if (tid == self->id) {
             mon = findMonitor(obj);
             monitorLock(mon, self);
             inflate(obj, mon, self);
-	    mon->count = (lockword&COUNT_MASK)>>COUNT_SHIFT;
-	} else
+            mon->count = (lockword & COUNT_MASK) >> COUNT_SHIFT;
+        } else
             goto not_owner;
     } else
-        mon = (Monitor*) (lockword & ~SHAPE_BIT);
+        mon = (Monitor *) (lockword & ~SHAPE_BIT);
 
-    if(monitorWait(mon, self, ms, ns))
+    if (monitorWait(mon, self, ms, ns))
         return;
 
-not_owner:
+    not_owner:
     signalException("java/lang/IllegalMonitorStateException", "thread not owner");
 }
 
@@ -370,13 +369,13 @@ void objectNotify(Object *obj) {
 
     TRACE(("Notify on obj 0x%x...\n", obj));
 
-    if((lockword & SHAPE_BIT) == 0) {
-        int tid = (lockword&TID_MASK)>>TID_SHIFT;
-	if(tid == self->id)
+    if ((lockword & SHAPE_BIT) == 0) {
+        int tid = (lockword & TID_MASK) >> TID_SHIFT;
+        if (tid == self->id)
             return;
     } else {
-        Monitor *mon = (Monitor*) (lockword & ~SHAPE_BIT);
-        if(monitorNotify(mon, self))
+        Monitor *mon = (Monitor *) (lockword & ~SHAPE_BIT);
+        if (monitorNotify(mon, self))
             return;
     }
 
@@ -389,13 +388,13 @@ void objectNotifyAll(Object *obj) {
 
     TRACE(("NotifyAll on obj 0x%x...\n", obj));
 
-    if((lockword & SHAPE_BIT) == 0) {
-        int tid = (lockword&TID_MASK)>>TID_SHIFT;
-	if(tid == self->id)
+    if ((lockword & SHAPE_BIT) == 0) {
+        int tid = (lockword & TID_MASK) >> TID_SHIFT;
+        if (tid == self->id)
             return;
     } else {
-        Monitor *mon = (Monitor*) (lockword & ~SHAPE_BIT);
-        if(monitorNotifyAll(mon, self))
+        Monitor *mon = (Monitor *) (lockword & ~SHAPE_BIT);
+        if (monitorNotifyAll(mon, self))
             return;
     }
 

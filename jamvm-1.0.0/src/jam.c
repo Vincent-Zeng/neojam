@@ -222,13 +222,15 @@ int main(int argc, char *argv[]) {
 
     // zeng: 组装给main方法的参数
     array = allocArray(findSystemClass("java/lang/String"), argc - class_arg - 1, 4);
+    // zeng: 数组size指针 减去 class_arg 即args地址包括 命令行中 class 及 class之前的参数
     args = INST_DATA(array) - class_arg;
 
+    // zeng: 只从 数组size 指针 接着的地址写入
     for (i = class_arg + 1; i < argc; i++)
         args[i] = (u4) Cstr2String(argv[i]);
 
-    // zeng: 执行main方法
     /* Call the main method */
+    // zeng: 执行main方法
     executeStaticMethod(class, mb, array);
 
     // zeng: TODO

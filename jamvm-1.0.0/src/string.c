@@ -112,27 +112,39 @@ void markInternedStrings() {
 
 
 Object *Cstr2String(char *cstr) {
+    // zeng: 分配一个String对象
     Object *ob = allocObject(string);
+
     Object *array;
     MethodBlock *mb;
+
     int len = strlen(cstr);
+
     char *spntr = cstr;
     short *apntr;
 
+    // zeng: void <init>(char[]) 方法
     if((mb = findMethod(string, "<init>", "([C)V")) == NULL) {
         printf("No constructor");
         exit(0);
     }
 
+    // zeng: 分配字符数组对象
     array = allocTypeArray(T_CHAR, len);
 
     /* copy string */
 
+    // zeng: 取数组内容空间开始地址
     apntr = ((short *)INST_DATA(array)) + 2;
+
+    // zeng: 将 c字符数组 写入 java字符数组
     for(; len > 0; len--)
         *apntr++ = *spntr++;
 
+    // zeng: 执行 String类构造方法, 参数 为 java字符数组
     executeMethod(ob, mb, array);
+
+    // zeng: 返回初始化过的String object
     return ob;
 }
 
@@ -156,8 +168,10 @@ void initialiseString() {
         FieldBlock *count, *value, *offset;
 
         /* As we're initialising, VM will abort if String can't be found */
+        // zeng: 加载String类
         string = findSystemClass0("java/lang/String");
 
+        // zeng; count value offset 字段
         count = findField(string, "count", "I");
         value = findField(string, "value", "[C");
         offset = findField(string, "offset", "I");
@@ -168,11 +182,14 @@ void initialiseString() {
             exit(0);
         }
 
+        // zeng: 字段在object空间中的offset
         count_offset = count->offset;
         value_offset = value->offset;
         offset_offset = offset->offset;
 
+        // zeng: string hash表
         initHashTable(hash_table, HASHTABSZE);
+
         inited = TRUE;
     }
 }

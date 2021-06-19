@@ -27,6 +27,7 @@ MethodBlock *findMethod(Class *class, char *methodname, char *type) {
     int i;
 
     for (i = 0; i < cb->methods_count; i++, mb++)
+        // zeng: name 和 type 都相同
         if ((strcmp(mb->name, methodname) == 0) && (strcmp(mb->type, type) == 0))
             return mb;
 
@@ -36,12 +37,14 @@ MethodBlock *findMethod(Class *class, char *methodname, char *type) {
 /* A class can't have two fields with the same name but different types - 
    so we give up if we find a field with the right name but wrong type...
 */
+// zeng: 查找class中字段名为fieldname, 描述符为type的FieldBlock 返回FieldBlock地址
 FieldBlock *findField(Class *class, char *fieldname, char *type) {
     ClassBlock *cb = CLASS_CB(class);
     FieldBlock *fb = cb->fields;
     int i;
 
     for (i = 0; i < cb->fields_count; i++, fb++)
+        // zeng: name 和 type 都相同
         if (strcmp(fb->name, fieldname) == 0)
             if (strcmp(fb->type, type) == 0)
                 return fb;
@@ -51,13 +54,15 @@ FieldBlock *findField(Class *class, char *fieldname, char *type) {
     return NULL;
 }
 
-// zeng: TODO
+// zeng: 查找class中 方法名为 methodname, 描述符为type的方法, 返回MethodBlock的地址
 MethodBlock *lookupMethod(Class *class, char *methodname, char *type) {
     MethodBlock *mb;
 
+    // zeng: cb -> methods中找
     if (mb = findMethod(class, methodname, type))
         return mb;
 
+    // zeng: cb -> super -> methods中找
     if (CLASS_CB(class)->super)
         return lookupMethod(CLASS_CB(class)->super, methodname, type);
 

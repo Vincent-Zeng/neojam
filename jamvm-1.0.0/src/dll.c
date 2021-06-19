@@ -164,6 +164,7 @@ void *resolveNativeMethod(MethodBlock *mb) {
     return func;
 }
 
+// zeng: TODO
 u4 *resolveNativeWrapper(Class *class, MethodBlock *mb, u4 *ostack) {
     void *func = resolveNativeMethod(mb);
 
