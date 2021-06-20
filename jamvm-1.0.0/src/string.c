@@ -76,6 +76,7 @@ int stringComp(Object *ptr, Object *ptr2) {
     return FALSE;
 }
 
+// zeng: 创建String对象
 Object *createString(unsigned char *utf8) {
     int len = utf8Len(utf8);
     Object *array;
@@ -89,15 +90,18 @@ Object *createString(unsigned char *utf8) {
        (ob = allocObject(string)) == NULL)
         return NULL;
 
+    // zeng: utf8字符数组 复制到 array对象内容体中
     data = (short*)INST_DATA(array)+2;
     convertUtf8(utf8, data);
 
+    // zeng: String对象内容体先是字符个数 然后是字符数组对象地址
     INST_DATA(ob)[count_offset] = len; 
     INST_DATA(ob)[value_offset] = (u4)array; 
 
     return ob;
 }
 
+// zeng: 是否已经有内容中字符完全一致的String对象, 如果有返回旧对象, 如果没有将新对象加入hash表
 Object *findInternedString(Object *string) {
     Object *interned;
 

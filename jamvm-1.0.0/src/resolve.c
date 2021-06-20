@@ -69,18 +69,21 @@ MethodBlock *lookupMethod(Class *class, char *methodname, char *type) {
     return NULL;
 }
 
+// zeng: 在class对象查找 该 名称 和 描述符 对应的FieldBlock地址
 FieldBlock *lookupField(Class *class, char *fieldname, char *type) {
     FieldBlock *fb;
 
     if (fb = findField(class, fieldname, type))
         return fb;
 
+    // zeng: 如果本类找不到 那么在父类中查找
     if (CLASS_CB(class)->super)
         return lookupField(CLASS_CB(class)->super, fieldname, type);
 
     return NULL;
 }
 
+// zeng: 解析constant_pool中cp_index下的CONSTANT_Class  CONSTANT_Class -> utf8全限定名 -> 查询 加载 链接 初始化 , 然后将cp_index下的值替换成对象地址
 Class *resolveClass(Class *class, int cp_index, int init) {
     // zeng: class中的constant_pool
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
@@ -221,6 +224,7 @@ MethodBlock *resolveInterfaceMethod(Class *class, int cp_index) {
     return mb;
 }
 
+// zeng: 解析constant_pool中cp_index下的CONSTANT_Fieldref  CONSTANT_Fieldref -> 类utf8限定名 -> 查询 加载 链接 初始化 , CONSTANT_Fieldref -> 方法名称utf8, 方法描述符utf8 -> FieldBlock地址, 然后将cp_index下的值替换成FieldBlock地址
 FieldBlock *resolveField(Class *class, int cp_index) {
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
     FieldBlock *fb;
@@ -237,24 +241,32 @@ FieldBlock *resolveField(Class *class, int cp_index) {
         case CONSTANT_Fieldref: {
             Class *resolved_class;
             char *fieldname, *fieldtype;
+
+            // zeng: 类全限定名 index
             int cl_idx = CP_FIELD_CLASS(cp, cp_index);
+            // zeng: 方法名称和描述符 index
             int name_type_idx = CP_FIELD_NAME_TYPE(cp, cp_index);
 
             if (CP_TYPE(cp, cp_index) != CONSTANT_Fieldref)
                 goto retry;
 
+            // zeng: 方法名称
             fieldname = CP_UTF8(cp, CP_NAME_TYPE_NAME(cp, name_type_idx));
+            // zeng: 方法描述符
             fieldtype = CP_UTF8(cp, CP_NAME_TYPE_TYPE(cp, name_type_idx));
+
+            // zeng: 获取index对应符号对应的class对象
             resolved_class = resolveClass(class, cl_idx, TRUE);
 
             if (exceptionOccured())
                 return NULL;
 
+            // zeng: 在class对象查找 该 名称 和 描述符 对应的FieldBlock地址
             fb = lookupField(resolved_class, fieldname, fieldtype);
 
             if (fb) {
                 CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-                CP_INFO(cp, cp_index) = (u4) fb;
+                CP_INFO(cp, cp_index) = (u4) fb;    // zeng: 符号引用(index) 改为 直接引用(FieldBlock地址)
                 CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
             } else
                 signalException("java/lang/NoSuchFieldError", fieldname);
@@ -266,6 +278,7 @@ FieldBlock *resolveField(Class *class, int cp_index) {
     return fb;
 }
 
+// zeng: 根据index从constant_pool中取值 这里会为utf8创建String对象 并把constant_pool中的utf8地址替换为String对象地址
 u4 resolveSingleConstant(Class *class, int cp_index) {
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
 
@@ -276,14 +289,14 @@ u4 resolveSingleConstant(Class *class, int cp_index) {
 
         case CONSTANT_String: {
             Object *string;
-            int idx = CP_STRING(cp, cp_index);
+            int idx = CP_STRING(cp, cp_index);  // zeng: 取utf8字符串的constant_pool index
             if (CP_TYPE(cp, cp_index) != CONSTANT_String)
                 goto retry;
 
-            string = createString(CP_UTF8(cp, idx));
+            string = createString(CP_UTF8(cp, idx));    // zeng: 取得ut8字符串, 创建string对象
             CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-            CP_INFO(cp, cp_index) = (u4) findInternedString(string);
-            CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
+            CP_INFO(cp, cp_index) = (u4) findInternedString(string);    // zeng: 如果string hash表已经有一个内容中字符完全一致的对象,就使用hash表中的对象就好了,让新的这个对象等待gc
+            CP_TYPE(cp, cp_index) = CONSTANT_Resolved;  // zeng: 字符串 hash表中取得的字符串的地址 已变成 String对象的地址了, 这也算是 符号引号 -> 直接引用 吧(把`hash表中取得的字符串的地址`视为符号)
             break;
         }
 

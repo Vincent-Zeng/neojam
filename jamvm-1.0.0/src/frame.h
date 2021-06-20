@@ -27,14 +27,14 @@
                                                                 \
     sp = (u4*)(dummy+1);				                    	\   // zeng: dummy结构提接下来是返回值地址的地址
     ret = sp;							                        \
-    new_frame = (Frame *)(sp + mb->max_locals);                 \   // zeng: 返回值地址接下来是本地变量表地址 本地变量表地址接下来就是新的栈帧地址
+    new_frame = (Frame *)(sp + mb->max_locals);                 \   // zeng: 返回值地址接下来是本地变量表地址 本地变量数组地址接下来就是新的栈帧地址
                                                                 \
     dummy->mb = NULL;                                           \
     dummy->ostack = sp;                                         \   // zeng: dummy ostack地址在dummy结构体之后 TODO 有什么用
     dummy->prev = last;                                         \   // zeng: dummy frame结构体指向前一个stack frame结构体
                                                                 \
-    new_frame->mb = mb;                                         \
-    new_frame->lvars = sp;                                      \   // zeng: TODO 本地变量表地址 为何是 返回值地址的地址?
+    new_frame->mb = mb;                                         \   // zeng: 设置frame结构体中的mb指向方法的MethodBlock
+    new_frame->lvars = sp;                                      \   // zeng: TODO 本地变量表地址 为何是 返回值地址的地址? 是因为本地变量数组可以暂时使用这个格子?
     new_frame->ostack = (u4 *)(new_frame + 1);                  \   // zeng: 新的frame结构体之后是新的ostack地址
                                                                 \
     new_frame->prev = dummy;                                    \   // zeng: 新的frame结构体指向dummy结构体

@@ -594,7 +594,7 @@ void linkClass(Class *class) {
                 fb->static_value = 0;
         } else {
             /* calc field offset */
-            fb->offset = offset;    // zeng: TODO 为非static字段分配空间中的offset? 对象空间?
+            fb->offset = offset;    // zeng: 为非static字段分配对象内容体空间中的offset
             if ((*fb->type == 'J') || (*fb->type == 'D'))
                 offset += 2;
             else
