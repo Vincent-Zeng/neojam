@@ -32,6 +32,7 @@
 #define BRANCH_W(p)   (((signed char)p[1])<<24)|(p[2]<<16)|(p[3]<<8)|p[4]
 #define DSIGNED(p)    (((signed char)p[1])<<8)|p[2]
 
+// zeng:抛出异常 异常类全限定名为excep_name 错误信息为message
 #define THROW_EXCEPTION(excep_name, message)                          \
 {                                                                     \
     frame->last_pc = (unsigned char*)pc;                              \
@@ -301,7 +302,7 @@
 
 #endif
 
-// zeng: TODO
+// zeng: 解释执行 指令
 u4 *executeJava() {
     // zeng: 线程执行上下文
     ExecEnv *ee = getExecEnv();
@@ -318,7 +319,7 @@ u4 *executeJava() {
     // zeng: 方法所在类constant_pool
     ConstantPool *cp = &(CLASS_CB(mb->class)->constant_pool);
 
-    // zeng: 取得方法所在对象 TODO 为何没有判断static? 因为static下面使用this时会判断?
+    // zeng: 取得方法所在对象  为何没有判断static? 因为static下面使用this时会判断? 是
     Object *this = (Object *) lvars[0];
 
     Class *new_class;
@@ -525,15 +526,11 @@ u4 *executeJava() {
                 *ostack++ = lvars[CP_SINDEX(pc)];   // zeng: 字节中读取index,根据index从局部变量数组中取值, 入栈
 
                 pc += 2;
-                DISPATCH(pc)
+                DISPATCH(pc)OPC_DSTORE
 
             DEF_OPC(OPC_LLOAD)
             DEF_OPC(OPC_DLOAD)
-                //	*((u8*)ostack)++ = *(u8*)(&lvars[CP_SINDEX(pc)]);
-                neoU8 = (u8 *) ostack;
-                *neoU8 = *(u8 *) (&lvars[CP_SINDEX(pc)]);   // zeng: long double占局部变量数组两个格子
-                neoU8++;
-                ostack = neoU8;
+                *((u8*)ostack)++ = *(u8*)(&lvars[CP_SINDEX(pc)]);    // zeng: long double占局部变量数组两个格子
 
                 pc += 2;
                 DISPATCH(pc)
@@ -646,11 +643,7 @@ u4 *executeJava() {
             DEF_OPC(OPC_DSTORE)
                 // zeng: 出栈, 值写入本地变量数组中(从code字节中读取的index)
 
-                //	*(u8*)(&lvars[CP_SINDEX(pc)]) = *--((u8*)ostack);
-                neoU8 = ostack;
-                neoU8--;
-                *(u8 *) (&lvars[CP_SINDEX(pc)]) = *neoU8;
-                ostack = neoU8;
+                *(u8*)(&lvars[CP_SINDEX(pc)]) = *--((u8*)ostack);
 
                 pc += 2;
                 DISPATCH(pc)
@@ -1177,10 +1170,10 @@ u4 *executeJava() {
             DEF_OPC(OPC_GETSTATIC) {    // zeng: 获取类变量
                 FieldBlock *fb;
 
-                // zeng: TODO
+                // zeng: 栈帧中记录当前pc 在异常处理时有用 所以有可能抛出错误的操作码逻辑 都要记录当前pc
                 frame->last_pc = (unsigned char *) pc;
 
-                // zeng: 传入方法所在类class对象 以及从code中两个字节对应的constant_pool中的index 返回FieldBlock地址
+                // zeng: 传入方法所在类class对象(用来获取classloader) 以及从code中两个字节对应的constant_pool中的index 返回FieldBlock地址
                 fb = resolveField(mb->class, CP_DINDEX(pc));
 
                 if (exceptionOccured0(ee))
@@ -1266,7 +1259,7 @@ u4 *executeJava() {
                 // zeng: 替换操作码 以便下次跳过解析环节
                 if (fb->offset > 255)
                     OPCODE_REWRITE(pc, OPC_GETFIELD_QUICK_W);
-                else    // zeng: 如果offset可以用1个字节表示 那么就直接用offset替换 Code中表示FieldBlock地址的字节(这里地址有两个字节 为什么有限制offset为一个字节时才走这个分支?)
+                else    // zeng: 如果offset可以用1个字节表示 那么就直接用offset 替换 Code中表示FieldBlock地址的字节(这里地址有两个字节 为什么有限制offset为一个字节时才走这个分支?)
                     OPCODE_REWRITE_OPERAND1(pc, ((*fb->type == 'J') || (*fb->type == 'D') ? OPC_GETFIELD2_QUICK : OPC_GETFIELD_QUICK), fb->offset);
 
                 // zeng: 解释执行替换的操作码
@@ -1415,83 +1408,102 @@ u4 *executeJava() {
 
             DEF_OPC(OPC_INVOKEVIRTUAL) {    // zeng: 调用实例方法
                 int idx;
+
+                // zeng: Code两个字节 读取为index
                 WITH_OPCODE_CHANGE_CP_DINDEX(pc, OPC_INVOKEVIRTUAL, idx);
 
                 frame->last_pc = (unsigned char *) pc;
+
+                // zeng: 传入方法所在类class对象(用来获取classloader) 以及从code中两个字节对应的constant_pool中的index 返回MethodBlock地址
                 new_mb = resolveMethod(mb->class, idx);
 
                 if (exceptionOccured0(ee))
                     goto throwException;
 
-                if ((new_mb->args_count < 256) && (new_mb->method_table_index < 256)) {
-                    OPCODE_REWRITE_OPERAND2(pc, OPC_INVOKEVIRTUAL_QUICK, new_mb->method_table_index,
-                                            new_mb->args_count);
+                if ((new_mb->args_count < 256) && (new_mb->method_table_index < 256)) { // zeng: 如果method_table_index和args_count都在一个字节数值范围内
+                    // zeng: 直接用 method_table_index和args_count 替换 Code中表示FieldBlock地址的字节 替换操作码
+                    OPCODE_REWRITE_OPERAND2(pc, OPC_INVOKEVIRTUAL_QUICK, new_mb->method_table_index,new_mb->args_count);
                 } else
+                    // zeng: 替换操作码
                     OPCODE_REWRITE(pc, OPC_INVOKEVIRTUAL_QUICK_W);
+
                 DISPATCH(pc)
             }
 
             DEF_OPC(OPC_INVOKEVIRTUAL_QUICK_W)
-                new_mb = (MethodBlock *) CP_INFO(cp, CP_DINDEX(pc));
-                arg1 = ostack - (new_mb->args_count);
+                new_mb = (MethodBlock *) CP_INFO(cp, CP_DINDEX(pc));    // zeng: 从Code两个字节中取得MethodBlock地址在constant_pool中的index 进而取得MethodBlock地址
+                arg1 = ostack - (new_mb->args_count);   // zeng: 第0个参数
                 NULL_POINTER_CHECK(*arg1);
 
-                new_class = (*(Object **) arg1)->class;
-                new_mb = CLASS_CB(new_class)->method_table[new_mb->method_table_index];
+                new_class = (*(Object **) arg1)->class; // zeng: this对象对应的class对象
+                new_mb = CLASS_CB(new_class)->method_table[new_mb->method_table_index]; // zeng: 根据index从class对象的method_table中获取MethodBlock地址
 
-                goto invokeMethod;
+                goto invokeMethod;  // zeng: 跳转到方法调用逻辑
 
-            DEF_OPC(OPC_INVOKESPECIAL) {
+            DEF_OPC(OPC_INVOKESPECIAL) {    // zeng: 调用 超类构造方法、实例初始化方法、私有方法
                 int idx;
+
+                // zeng: Code中两个字节为 constant_pool index
                 WITH_OPCODE_CHANGE_CP_DINDEX(pc, OPC_INVOKESPECIAL, idx);
 
                 frame->last_pc = (unsigned char *) pc;
+
+                // zeng: 获取MethodBlock地址
                 new_mb = resolveMethod(mb->class, idx);
 
                 if (exceptionOccured0(ee))
                     goto throwException;
 
                 /* Check if invoking a super method... */
-                if ((CLASS_CB(mb->class)->access_flags & ACC_SUPER) &&
-                    ((new_mb->access_flags & ACC_PRIVATE) == 0) && (new_mb->name[0] != '<')) {
+                if ((CLASS_CB(mb->class)->access_flags & ACC_SUPER) && ((new_mb->access_flags & ACC_PRIVATE) == 0) && (new_mb->name[0] != '<')) {   // zeng: 调用超类构造方法
+                    // zeng: 将代表constant_pool index的两个字节直接替换为method_table_index  替换操作码
                     OPCODE_REWRITE_OPERAND2(pc, OPC_INVOKESUPER_QUICK,
                                             new_mb->method_table_index >> 8,
                                             new_mb->method_table_index & 0xff);
                 } else
-                    OPCODE_REWRITE(pc, OPC_INVOKENONVIRTUAL_QUICK);
-                DISPATCH(pc)
+                    OPCODE_REWRITE(pc, OPC_INVOKENONVIRTUAL_QUICK); // zeng: 替换操作码
+
+                DISPATCH(pc)    // zeng: 解释执行替换的操作码
             }
 
             DEF_OPC(OPC_INVOKESUPER_QUICK)
-                new_mb = CLASS_CB(CLASS_CB(mb->class)->super)->method_table[CP_DINDEX(pc)];
-                arg1 = ostack - (new_mb->args_count);
+                new_mb = CLASS_CB(CLASS_CB(mb->class)->super)->method_table[CP_DINDEX(pc)]; // zeng: Code中两个字节为method_table_index 从 super -> method_table 中取得 MethodBlock地址
+                arg1 = ostack - (new_mb->args_count);   // zeng: 定位到操作数栈中第0个参数
+
                 NULL_POINTER_CHECK(*arg1);
+
                 goto invokeMethod;
 
             DEF_OPC(OPC_INVOKENONVIRTUAL_QUICK)
-                new_mb = (MethodBlock *) CP_INFO(cp, CP_DINDEX(pc));
-                arg1 = ostack - (new_mb->args_count);
+                new_mb = (MethodBlock *) CP_INFO(cp, CP_DINDEX(pc));    // zeng: Code中两个字节为 MethodBlock 地址
+                arg1 = ostack - (new_mb->args_count);   // zeng: 定位到操作数栈中第0个参数
+
                 NULL_POINTER_CHECK(*arg1);
                 goto invokeMethod;
 
-            DEF_OPC(OPC_INVOKESTATIC)
+            DEF_OPC(OPC_INVOKESTATIC)   // zeng: 调用static方法
                 frame->last_pc = (unsigned char *) pc;
-                new_mb = resolveMethod(mb->class, CP_DINDEX(pc));
+
+                new_mb = resolveMethod(mb->class, CP_DINDEX(pc));   // zeng: Code中两个字节取得constant_pool index, 进而取得MethodBlock地址
 
                 if (exceptionOccured0(ee))
                     goto throwException;
 
-                OPCODE_REWRITE(pc, OPC_INVOKESTATIC_QUICK);
-                DISPATCH(pc)
+                OPCODE_REWRITE(pc, OPC_INVOKESTATIC_QUICK); // zeng: 替换操作码 以便下次跳过解析过程
+
+                DISPATCH(pc)    // zeng: 解释执行新操作码
 
             DEF_OPC(OPC_INVOKESTATIC_QUICK)
-                new_mb = (MethodBlock *) CP_INFO(cp, CP_DINDEX(pc));
-                arg1 = ostack - new_mb->args_count;
+                new_mb = (MethodBlock *) CP_INFO(cp, CP_DINDEX(pc));    // zeng: Code中两个字节取得constant_pool index, 通过index直接取得MethodBlock地址
+
+                arg1 = ostack - new_mb->args_count; // zeng: 定位操作数栈中第0个参数
+
                 goto invokeMethod;
 
-            DEF_OPC(OPC_INVOKEINTERFACE)
+            DEF_OPC(OPC_INVOKEINTERFACE)    // zeng: 调用接口方法
                 frame->last_pc = (unsigned char *) pc;
-                new_mb = resolveInterfaceMethod(mb->class, CP_DINDEX(pc));
+
+                new_mb = resolveInterfaceMethod(mb->class, CP_DINDEX(pc));  // zeng: 从code两个字节中读取constant_pool index, 进而获取MethodBlock地址
 
                 if (exceptionOccured0(ee))
                     goto throwException;
@@ -1499,62 +1511,77 @@ u4 *executeJava() {
                 arg1 = ostack - (new_mb->args_count);
                 NULL_POINTER_CHECK(*arg1);
 
+                // zeng: 在this对应的class对象中查找 与接口方法 同方法名 同描述符 的 方法
                 new_class = (*(Object **) arg1)->class;
+
                 new_mb = lookupMethod(new_class, new_mb->name, new_mb->type);
 
                 goto invokeMethod;
 
-            DEF_OPC(OPC_ARRAYLENGTH) {
-                Object *array = (Object *) ostack[-1];
+            DEF_OPC(OPC_ARRAYLENGTH) {  // zeng: 栈顶的数组引用出栈，该数组的长度进栈
+                Object *array = (Object *) ostack[-1];  // zeng: 出栈, 值为数组地址
                 NULL_POINTER_CHECK(array);
 
-                ostack[-1] = *INST_DATA(array);
+                ostack[-1] = *INST_DATA(array); // zeng: 数组内容体开头就是数组长度 进栈
+
                 pc += 1;
                 DISPATCH(pc)
             }
 
             DEF_OPC(OPC_ATHROW) {
-                Object *ob = (Object *) ostack[-1];
+                Object *ob = (Object *) ostack[-1]; // zeng: 出栈, 值为异常对象地址
+
                 frame->last_pc = (unsigned char *) pc;
                 NULL_POINTER_CHECK(ob);
 
-                ee->exception = ob;
-                goto throwException;
+                ee->exception = ob; // zeng: 设置运行上下文中的exception为该异常对象地址
+
+                goto throwException;    // zeng: 跳转
             }
 
-            DEF_OPC(OPC_NEW) {
+            DEF_OPC(OPC_NEW) {  // zeng: 创建一个对象,将对象地址入栈
                 Class *class;
                 Object *ob;
 
                 frame->last_pc = (unsigned char *) pc;
+
+                // zeng: 从code两个字节获取constant_pool index 进而获得class对象
                 class = resolveClass(mb->class, CP_DINDEX(pc), TRUE);
 
+                // zeng: 发生异常 跳转到异常处理
                 if (exceptionOccured0(ee))
                     goto throwException;
 
+                // zeng: 分配对象空间 返回对象地址
                 if ((ob = allocObject(class)) == NULL)
                     goto throwException;
 
-                *ostack++ = (u4) ob;
+                *ostack++ = (u4) ob;    // zeng: 对象地址入栈
+
                 pc += 3;
                 DISPATCH(pc)
             }
 
-            DEF_OPC(OPC_NEWARRAY) {
-                int type = pc[1];
-                int count = *--ostack;
+            DEF_OPC(OPC_NEWARRAY) { // zeng: 创建一个基本类型数组，将地址入栈
+                int type = pc[1];   // zeng: code下一个字节为基本类型
+                int count = *--ostack;  // zeng: 出栈, 值为数组大小
+
                 Object *ob;
 
                 frame->last_pc = (unsigned char *) pc;
+
+                // zeng: 分配数组对象空间
                 if ((ob = allocTypeArray(type, count)) == NULL)
                     goto throwException;
 
+                // zeng: 数组对象地址入栈
                 *ostack++ = (u4) ob;
+
                 pc += 2;
                 DISPATCH(pc)
             }
 
-            DEF_OPC(OPC_ANEWARRAY) {
+            DEF_OPC(OPC_ANEWARRAY) {    // zeng: 创建一个引用类型元素的数组, 将数组入栈
                 Class *array_class;
                 char ac_name[256];
                 int count = ostack[-1];
@@ -1562,79 +1589,95 @@ u4 *executeJava() {
                 Object *ob;
 
                 frame->last_pc = (unsigned char *) pc;
+
+                // zeng: code下2个字节为constant_pool index, 根据index得到class对象地址
                 class = resolveClass(mb->class, CP_DINDEX(pc), FALSE);
 
                 if (exceptionOccured0(ee))
                     goto throwException;
 
-                if (CLASS_CB(class)->name[0] == '[')
+                if (CLASS_CB(class)->name[0] == '[')    // zeng: 如果元素也是数组
                     strcat(strcpy(ac_name, "["), CLASS_CB(class)->name);
                 else
                     strcat(strcat(strcpy(ac_name, "[L"), CLASS_CB(class)->name), ";");
 
+                // zeng: 根据 数组全限定名 获得 数组的class对象
                 array_class = findArrayClass(ac_name);
 
                 if (exceptionOccured0(ee))
                     goto throwException;
 
+                // zeng:  分配数组空间 元素都只是对象地址 所以元素大小为4个字节
                 if ((ob = allocArray(array_class, count, 4)) == NULL)
                     goto throwException;
 
+                // zeng: 数组对象地址入栈
                 ostack[-1] = (u4) ob;
+
                 pc += 3;
                 DISPATCH(pc)
             }
 
-            DEF_OPC(OPC_CHECKCAST) {
-                Object *obj = (Object *) ostack[-1];
+            DEF_OPC(OPC_CHECKCAST) {    // zeng: 类型转换检查
+                Object *obj = (Object *) ostack[-1];    // zeng: 栈顶为要检查的对象地址 不出栈
                 Class *class;
 
                 frame->last_pc = (unsigned char *) pc;
-                class = resolveClass(mb->class, CP_DINDEX(pc), TRUE);
+
+                class = resolveClass(mb->class, CP_DINDEX(pc), TRUE);   // zeng:  code下2个字节为constant_pool index, 根据index取得类class对象
 
                 if (exceptionOccured0(ee))
                     goto throwException;
 
-                if ((obj != NULL) && !isInstanceOf(class, obj->class)) THROW_EXCEPTION("java/lang/ClassCastException",
-                                                                                       CLASS_CB(obj->class)->name);
+                if ((obj != NULL) && !isInstanceOf(class, obj->class)) // zeng: 对象是否class类型
+                    THROW_EXCEPTION("java/lang/ClassCastException",CLASS_CB(obj->class)->name); // zeng: 抛出异常
 
                 pc += 3;
+
                 DISPATCH(pc)
             }
 
-            DEF_OPC(OPC_INSTANCEOF) {
-                Object *obj = (Object *) ostack[-1];
+            DEF_OPC(OPC_INSTANCEOF) {   // zeng: 检查对象是否是指定的类的实例。如果是，1进栈；否则，0进栈
+                Object *obj = (Object *) ostack[-1];     // zeng: 栈顶为要检查的对象地址
                 Class *class;
 
                 frame->last_pc = (unsigned char *) pc;
-                class = resolveClass(mb->class, CP_DINDEX(pc), FALSE);
+
+                class = resolveClass(mb->class, CP_DINDEX(pc), FALSE);  // zeng:  code下2个字节为constant_pool index, 根据index取得类class对象
 
                 if (exceptionOccured0(ee))
                     goto throwException;
 
                 if (obj != NULL)
-                    ostack[-1] = isInstanceOf(class, obj->class);
+                    ostack[-1] = isInstanceOf(class, obj->class);    // zeng: 对象是否class类型 这里直接将比较结果覆盖栈顶的对象地址 相当于先出栈后入栈
+
                 pc += 3;
                 DISPATCH(pc)
             }
 
-            DEF_OPC(OPC_MONITORENTER) {
-                Object *ob = (Object *) *--ostack;
+            DEF_OPC(OPC_MONITORENTER) { // zeng: 获得对象锁
+                Object *ob = (Object *) *--ostack;  // zeng: 出栈 值为对象地址
+
                 NULL_POINTER_CHECK(ob);
+
                 objectLock(ob);
+
                 pc += 1;
                 DISPATCH(pc)
             }
 
-            DEF_OPC(OPC_MONITOREXIT) {
-                Object *ob = (Object *) *--ostack;
+            DEF_OPC(OPC_MONITOREXIT) {  // zeng: 释放对象锁
+                Object *ob = (Object *) *--ostack;  // zeng: 出栈 值为对象地址
+
                 NULL_POINTER_CHECK(ob);
+
                 objectUnlock(ob);
+
                 pc += 1;
                 DISPATCH(pc)
             }
 
-            DEF_OPC(OPC_WIDE) {
+            DEF_OPC(OPC_WIDE) { // zeng: 用于和下一个操作码配合 逻辑和使下一个操作码的逻辑相同 不同的地方是取constant pool时是从code下2个字节取 而不是下1个字节取
                 int opcode = pc[1];
                 switch (opcode) {
                     case OPC_ILOAD:
@@ -1646,11 +1689,8 @@ u4 *executeJava() {
 
                     case OPC_LLOAD:
                     case OPC_DLOAD:
-                        //*((u8*)ostack)++ = *(u8*)(&lvars[CP_DINDEX((pc+1))]);
-                        neoU8 = ostack;
-                        *neoU8 = *(u8 *) (&lvars[CP_DINDEX((pc + 1))]);
-                        neoU8++;
-                        ostack = neoU8;
+                        *((u8*)ostack)++ = *(u8*)(&lvars[CP_DINDEX((pc+1))]);
+
                         pc += 4;
                         break;
 
@@ -1663,11 +1703,8 @@ u4 *executeJava() {
 
                     case OPC_LSTORE:
                     case OPC_DSTORE:
-                        // *(u8*)(&lvars[CP_DINDEX((pc+1))]) = *--((u8*)ostack);
-                        neoU8 = ostack;
-                        neoU8--;
-                        *(u8 *) (&lvars[CP_DINDEX((pc + 1))]) = *neoU8;
-                        ostack = neoU8;
+                        *(u8*)(&lvars[CP_DINDEX((pc+1))]) = *--((u8*)ostack);
+
                         pc += 4;
                         break;
 
@@ -1680,26 +1717,31 @@ u4 *executeJava() {
                         pc += 6;
                         break;
                 }
-                DISPATCH(pc)
+
+                DISPATCH(pc)    // zeng: 跳转
             }
 
-            DEF_OPC(OPC_MULTIANEWARRAY) {
+            DEF_OPC(OPC_MULTIANEWARRAY) {   // zeng: 创建多维数组
                 Class *class;
-                int dim = pc[3];
+                int dim = pc[3];    // zeng: code pc之后第3个字节为 数组维数
                 Object *ob;
 
                 frame->last_pc = (unsigned char *) pc;
-                class = resolveClass(mb->class, CP_DINDEX(pc), FALSE);
+
+                class = resolveClass(mb->class, CP_DINDEX(pc), FALSE);  // zeng: code pc下2个字节为constant_pool index, 通过index取得class对象地址
 
                 if (exceptionOccured0(ee))
                     goto throwException;
 
-                ostack -= dim;
+                ostack -= dim;  // zeng: 每个维度下的size出栈
 
+                // zeng: 创建多维数组 返回数组对象地址
                 if ((ob = allocMultiArray(class, dim, ostack)) == NULL)
                     goto throwException;
 
+                // zeng: 数组对象入栈
                 *ostack++ = (u4) ob;
+
                 pc += 4;
                 DISPATCH(pc)
             }
@@ -1714,42 +1756,52 @@ u4 *executeJava() {
             }
 
             DEF_OPC(OPC_IFNONNULL) {
-                int v = *--ostack;
-                if (v != 0) {
+                int v = *--ostack;  // zeng: 出栈, 值存入v
+
+                if (v != 0) {   // zeng: v不为0时 pc 加上 pc下2个字节表示的偏移量
                     pc += BRANCH(pc);
-                } else
+                } else  // zeng: 下一个指令
                     pc += 3;
+
                 DISPATCH(pc)
             }
 
             DEF_OPC(OPC_GOTO_W)
-                pc += BRANCH_W(pc);
+                pc += BRANCH_W(pc); // zeng: pc 加上 pc下4个字节表示的偏移量
+
                 DISPATCH(pc)
 
             DEF_OPC(OPC_JSR_W)
-                *ostack++ = (u4) pc + 3;
-                pc += BRANCH_W(pc);
+                *ostack++ = (u4) pc + 3;     // zeng: 下一个指令地址入栈
+
+                pc += BRANCH_W(pc); // zeng: pc 加上 pc下4个字节表示的偏移量
+
                 DISPATCH(pc)
 
-            DEF_OPC(OPC_LOCK)
+            DEF_OPC(OPC_LOCK)   // zeng: 等待(循环跳转到当前pc)
                 DISPATCH(pc)
 
             DEF_OPC(OPC_INVOKEVIRTUAL_QUICK)
-                arg1 = ostack - pc[2];
+                arg1 = ostack - pc[2];  // zeng: pc[2]为args_count 调用方法时 操作数栈已经入栈了所有参数 这里定位到第0个参数
 
                 NULL_POINTER_CHECK(*arg1);
 
-                new_class = (*(Object **) arg1)->class;
-                new_mb = CLASS_CB(new_class)->method_table[pc[1]];
+                new_class = (*(Object **) arg1)->class; // zeng: 第0个参数为this对象地址 这里取得this对象对应的class对象
+                new_mb = CLASS_CB(new_class)->method_table[pc[1]];  // zeng: pc[1]为method_table_index 根据index从class对象的method_table中获取MethodBlock地址
+                // zeng: DISPATCH 相当于 `goto invokeMethod` 丑陋
 
             invokeMethod:
             {
                 /* Create new frame first.  This is also created for natives
                    so that they appear correctly in the stack trace */
 
+                // zeng: 上一个方法的ostack中包含了所有参数 这里相当于该ostack所有调用参数出栈 然后从ostack之后的地址作为新栈帧的本地方法数组地址 并把出栈的数值复制到这个本地方法数组
+                // zeng: 本地方法数组之后是Frame结构体
                 Frame *new_frame = (Frame *) (arg1 + new_mb->max_locals);
+
                 Object *sync_ob = NULL;
 
+                // zeng: 检查 地址是否超出栈空间
                 if ((char *) new_frame > ee->stack_end) {
                     ee->stack_end += 1024;
                     THROW_EXCEPTION("java/lang/StackOverflowError", NULL);
@@ -1757,20 +1809,20 @@ u4 *executeJava() {
 
                 new_frame->mb = new_mb;
                 new_frame->lvars = arg1;
-                new_frame->ostack = (u4 *) (new_frame + 1);
+                new_frame->ostack = (u4 *) (new_frame + 1); // zeng: Frame结构体后是ostack地址
                 new_frame->prev = frame;
                 frame->last_pc = (unsigned char *) pc;
 
-                ee->last_frame = new_frame;
+                ee->last_frame = new_frame; // zeng: 最近的栈帧
 
+                // zeng: synchronized方法 static方法在class对象上上锁 非static方法在this上上锁
                 if (new_mb->access_flags & ACC_SYNCHRONIZED) {
                     sync_ob = new_mb->access_flags & ACC_STATIC ? (Object *) new_mb->class : (Object *) *arg1;
                     objectLock(sync_ob);
                 }
 
-                if (new_mb->access_flags & ACC_NATIVE) {
-                    ostack = (*(u4 *(*)(Class *, MethodBlock *, u4 *)) new_mb->native_invoker)(new_mb->class, new_mb,
-                                                                                               arg1);
+                if (new_mb->access_flags & ACC_NATIVE) {    // zeng: 是否是native方法 TODO
+                    ostack = (*(u4 *(*)(Class *, MethodBlock *, u4 *)) new_mb->native_invoker)(new_mb->class, new_mb, arg1);
 
                     if (sync_ob)
                         objectUnlock(sync_ob);
@@ -1779,52 +1831,66 @@ u4 *executeJava() {
 
                     if (exceptionOccured0(ee))
                         goto throwException;
+
                     pc += *pc == OPC_INVOKEINTERFACE ? 5 : 3;
                 } else {
+                    // zeng: 更新当前栈帧, 当前方法, 当前本地变量数组, 当前操作数栈, 当前this, 当前consant_pool
+
                     frame = new_frame;
                     mb = new_mb;
                     lvars = new_frame->lvars;
                     this = (Object *) lvars[0];
                     ostack = new_frame->ostack;
+
+                    // zeng: 更新pc到新方法的code地址
                     pc = mb->code;
+
                     cp = &(CLASS_CB(mb->class)->constant_pool);
                 }
+
+                // zeng: 跳转到新方法执行
                 DISPATCH(pc)
             }
 
             methodReturn:
                 /* Set interpreter state to previous frame */
 
-                frame = frame->prev;
+                frame = frame->prev;    // zeng: 当前栈帧出栈
 
-                if (frame->mb == NULL) {
+                if (frame->mb == NULL) {    // zeng: 如果是dummy栈帧 说明是c方法调用 直接返回
                     /* The previous frame is a dummy frame - this indicates
                        top of this Java invocation. */
                     return ostack;
                 }
 
+                // zeng: synchronized方法 释放锁
                 if (mb->access_flags & ACC_SYNCHRONIZED) {
                     Object *sync_ob = mb->access_flags & ACC_STATIC ? (Object *) mb->class : this;
+
                     objectUnlock(sync_ob);
                 }
 
+                // zeng: 更新当前执行环境为调用链上前1个方法
                 mb = frame->mb;
-                ostack = lvars;
+                ostack = lvars; // zeng: 上面和return有关的操作码逻辑中, 都将返回值写入本地变量数组index为0处 这里`ostack = lvars`效果就是调用前的ostack状态入栈了一个返回值
                 lvars = frame->lvars;
                 this = (Object *) lvars[0];
-                pc = frame->last_pc;
-                pc += *pc == OPC_INVOKEINTERFACE ? 5 : 3;
+                pc = frame->last_pc;    // zeng: `调用`操作码的pc
+                pc += *pc == OPC_INVOKEINTERFACE ? 5 : 3;    // zeng: invokeinterface指令共5个字节(后面两个字节好像没用到?) 其他指令为3个字节 这里就是取得`调用`指令的下一条指令的pc
                 cp = &(CLASS_CB(mb->class)->constant_pool);
 
                 /* Pop frame */
-                ee->last_frame = frame;
+                ee->last_frame = frame; // zeng:  更新执行上下文中的当前栈帧
+
                 DISPATCH(pc)
 
             throwException:
             {
-                Object *excep = ee->exception;
-                clearException();
+                Object *excep = ee->exception;  // zeng: 从运行上下文中获取异常对象地址
 
+                clearException();   // zeng: 运行上下文中exception设置为null
+
+                // zeng: 查找catch block 返回handler块地址
                 pc = findCatchBlock(excep->class);
 
                 if (pc == NULL) {
@@ -1832,6 +1898,7 @@ u4 *executeJava() {
                     return;
                 }
 
+                // zeng: 更新执行环境到catch block所在方法
                 frame = ee->last_frame;
                 mb = frame->mb;
                 ostack = frame->ostack;
@@ -1839,8 +1906,9 @@ u4 *executeJava() {
                 this = (Object *) lvars[0];
                 cp = &(CLASS_CB(mb->class)->constant_pool);
 
-                *ostack++ = (u4) excep;
-                DISPATCH(pc)
+                *ostack++ = (u4) excep; // zeng: 操作数栈中写入异常对象地址
+
+                DISPATCH(pc)    // zeng: 跳转
             }
 #ifndef THREADED
         }

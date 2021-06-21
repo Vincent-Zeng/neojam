@@ -902,7 +902,7 @@ Class *findClassFromClassLoader(char *classname, Object *loader) {
         // zeng: 获取classloader.loadClass方法
         MethodBlock *mb = lookupMethod(loader->class,
                                        "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
-        // zeng: TODO 为什么要createString
+        // zeng: 创建String对象 因为方法参数类型是String的
         Object *string = createString(dot_name);
 
         free(dot_name);

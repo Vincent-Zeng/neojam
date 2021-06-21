@@ -988,11 +988,11 @@ Object *allocArray(Class *class, int size, int el_size) {
         return NULL;
     }
 
-    // zeng: 分配数组对象空间 返回对象地址 TODO 为什么是这个长度?
+    // zeng: 分配数组对象空间 返回对象地址 (元素所占字节 + 长度数值所占字节 + Object结构体所占字节)
     ob = (Object *)gcMalloc(size * el_size + 4 + sizeof(Object));
 
     if(ob != NULL) {
-        // zeng: TODO
+        // zeng: 对象体刚开始是数组长度
         *INST_DATA(ob) = size;
 
         // zeng: 数组object -> class 为 元素的class
@@ -1063,18 +1063,20 @@ Object *allocMultiArray(Class *array_class, int dim, int *count) {
     Object *array;
 
     if(dim > 1) {
+        Class *aclass = findArrayClassFromClass(CLASS_CB(array_class)->name+1, array_class);    // zeng: 第1个维度下元素类型class对象
 
-        Class *aclass = findArrayClassFromClass(CLASS_CB(array_class)->name+1, array_class);
         array = allocArray(array_class, *count, 4);
 
-	if(array == NULL)
+	    if(array == NULL)
             return NULL;
 
-        for(i = 1; i <= *count; i++)
-            INST_DATA(array)[i] = (u4)allocMultiArray(aclass, dim-1, count+1);
-    } else {
+        for(i = 1; i <= *count; i++)    // zeng: 第1个维度下遍历元素, 由于元素类型也是数组, 所以递归调用
+            INST_DATA(array)[i] = (u4)allocMultiArray(aclass, dim-1, count+1);  // zeng: 返回值是数组对象地址 所以每个格子保存的都是数组对象地址
+
+    } else {    // zeng: 递归出口
         int el_size;
 
+        // zeng: 根据类型分配元素字节数
         switch(CLASS_CB(array_class)->name[1]) {
             case 'B':
             case 'Z':
@@ -1088,15 +1090,17 @@ Object *allocMultiArray(Class *array_class, int dim, int *count) {
 
             case 'I':
             case 'F':
-            case 'L':
+            case 'L':   // zeng: 对象地址
                 el_size = 4;
                 break;
 
-            default:
+            default:    // zeng: Double Long
                 el_size = 8;
                 break;
         }
-        array = allocArray(array_class, *count, el_size);        
+
+        // zeng: 分配数组对象空间 返回数组对象地址
+        array = allocArray(array_class, *count, el_size);
     }
 
     return array;

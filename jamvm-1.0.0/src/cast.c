@@ -36,8 +36,10 @@ char implements(Class *class, Class *test) {
     return FALSE;
 }
 
+// zeng: test是class的子类
 char isSubClassOf(Class *class, Class *test) {
     for(; test != NULL && test != class; test = CLASS_CB(test)->super);
+
     return test != NULL;
 }
 
@@ -48,14 +50,14 @@ char isInstOfArray(Class *class, Class *test) {
         ClassBlock *class_cb = CLASS_CB(class);
         ClassBlock *test_cb = CLASS_CB(test);
 
-        if((class_cb->name[0] == '[') && (test_cb->element_class != NULL) &&
-                   (class_cb->element_class != NULL) && (class_cb->dim == test_cb->dim))
-            return isInstanceOf(class_cb->element_class, test_cb->element_class);
+        if((class_cb->name[0] == '[') && (test_cb->element_class != NULL) && (class_cb->element_class != NULL) && (class_cb->dim == test_cb->dim))  // zeng: 都是数组 维数相同
+            return isInstanceOf(class_cb->element_class, test_cb->element_class);   // zeng: test元素类型是class元素类型 的子类
         else
             return FALSE;
     }
 }
 
+// zeng: test是否是class的子类
 char isInstanceOf(Class *class, Class *test) {
     if(class == test)
         return TRUE;

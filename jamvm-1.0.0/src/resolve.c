@@ -134,6 +134,7 @@ Class *resolveClass(Class *class, int cp_index, int init) {
     return resolved_class;
 }
 
+// zeng: 解析constant_pool中cp_index下的CONSTANT_Fieldref  CONSTANT_Fieldref -> 类utf8限定名 -> 查询 加载 链接 初始化 , CONSTANT_Fieldref -> 方法名称utf8, 方法描述符utf8 -> MethodBlock地址, 然后将cp_index下的值替换成MethodBlock地址
 MethodBlock *resolveMethod(Class *class, int cp_index) {
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
     MethodBlock *mb;
@@ -150,24 +151,31 @@ MethodBlock *resolveMethod(Class *class, int cp_index) {
         case CONSTANT_Methodref: {
             Class *resolved_class;
             char *methodname, *methodtype;
+            // zeng: constant_pool 下读取 类全限定名 index
             int cl_idx = CP_METHOD_CLASS(cp, cp_index);
+            // zeng: constant_pool 下读取 方法名称和描述符 index
             int name_type_idx = CP_METHOD_NAME_TYPE(cp, cp_index);
 
             if (CP_TYPE(cp, cp_index) != CONSTANT_Methodref)
                 goto retry;
 
+            // zeng: 方法名称
             methodname = CP_UTF8(cp, CP_NAME_TYPE_NAME(cp, name_type_idx));
+            // zeng: 方法描述符
             methodtype = CP_UTF8(cp, CP_NAME_TYPE_TYPE(cp, name_type_idx));
+
+            // zeng: 获取index对应符号对应的class对象
             resolved_class = resolveClass(class, cl_idx, TRUE);
 
             if (exceptionOccured())
                 return NULL;
 
+            // zeng: 在class对象查找 该 名称 和 描述符 对应的MethodBlock地址
             mb = lookupMethod(resolved_class, methodname, methodtype);
 
             if (mb) {
                 CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-                CP_INFO(cp, cp_index) = (u4) mb;
+                CP_INFO(cp, cp_index) = (u4) mb;    // zeng: 符号引用(index) 改为 直接引用(MethodBlock地址)
                 CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
             } else
                 signalException("java/lang/NoSuchMethodError", methodname);
@@ -179,6 +187,7 @@ MethodBlock *resolveMethod(Class *class, int cp_index) {
     return mb;
 }
 
+// zeng: 解析constant_pool中cp_index下的CONSTANT_Fieldref  CONSTANT_Fieldref -> 类utf8限定名 -> 查询 加载 链接 初始化 , CONSTANT_Fieldref -> 方法名称utf8, 方法描述符utf8 -> MethodBlock地址, 然后将cp_index下的值替换成MethodBlock地址
 MethodBlock *resolveInterfaceMethod(Class *class, int cp_index) {
     ConstantPool *cp = &(CLASS_CB(class)->constant_pool);
     MethodBlock *mb;
@@ -195,24 +204,32 @@ MethodBlock *resolveInterfaceMethod(Class *class, int cp_index) {
         case CONSTANT_InterfaceMethodref: {
             Class *resolved_class;
             char *methodname, *methodtype;
+
+            // zeng: constant_pool 下读取 类全限定名 index
             int cl_idx = CP_METHOD_CLASS(cp, cp_index);
+            // zeng: constant_pool 下读取 方法名称和描述符 index
             int name_type_idx = CP_METHOD_NAME_TYPE(cp, cp_index);
 
             if (CP_TYPE(cp, cp_index) != CONSTANT_InterfaceMethodref)
                 goto retry;
 
+            // zeng: 方法名称
             methodname = CP_UTF8(cp, CP_NAME_TYPE_NAME(cp, name_type_idx));
+            // zeng: 方法描述符
             methodtype = CP_UTF8(cp, CP_NAME_TYPE_TYPE(cp, name_type_idx));
+
+            // zeng: 获取index对应符号对应的class对象
             resolved_class = resolveClass(class, cl_idx, TRUE);
 
             if (exceptionOccured())
                 return NULL;
 
+            // zeng: 在class对象查找 该 名称 和 描述符 对应的MethodBlock地址
             mb = lookupMethod(resolved_class, methodname, methodtype);
 
             if (mb) {
                 CP_TYPE(cp, cp_index) = CONSTANT_Locked;
-                CP_INFO(cp, cp_index) = (u4) mb;
+                CP_INFO(cp, cp_index) = (u4) mb;     // zeng: 符号引用(index) 改为 直接引用(MethodBlock地址)
                 CP_TYPE(cp, cp_index) = CONSTANT_Resolved;
             } else
                 signalException("java/lang/NoSuchMethodError", methodname);
@@ -250,9 +267,9 @@ FieldBlock *resolveField(Class *class, int cp_index) {
             if (CP_TYPE(cp, cp_index) != CONSTANT_Fieldref)
                 goto retry;
 
-            // zeng: 方法名称
+            // zeng: 字段名称
             fieldname = CP_UTF8(cp, CP_NAME_TYPE_NAME(cp, name_type_idx));
-            // zeng: 方法描述符
+            // zeng: 字段描述符
             fieldtype = CP_UTF8(cp, CP_NAME_TYPE_TYPE(cp, name_type_idx));
 
             // zeng: 获取index对应符号对应的class对象

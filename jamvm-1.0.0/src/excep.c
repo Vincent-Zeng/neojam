@@ -27,7 +27,7 @@ Object *exceptionOccured() {
    return getExecEnv()->exception; 
 }
 
-// zeng: TODO
+// zeng: 传入 异常类全限定名 和 异常字符串 , 会设置 异常类class地址 到 执行上下文的exception
 void signalException(char *excep_name, char *message) {
     if(VM_initing) {
         fprintf(stderr, "Exception occurred while VM initialising.\n");
@@ -37,15 +37,19 @@ void signalException(char *excep_name, char *message) {
             fprintf(stderr, "%s\n", excep_name);
         exit(1);
     } else {
-        Class *exception = findSystemClass(excep_name);
+        Class *exception = findSystemClass(excep_name); // zeng: 根据全限定名 得到 异常类 class对象地址
 
         if(!exceptionOccured()) {
-            Object *exp = allocObject(exception);
+            Object *exp = allocObject(exception);   // zeng: 为异常对象分配内存
+            // zeng: 准备初始化方法的参数
             Object *str = message == NULL ? NULL : Cstr2String(message);
+            // zeng: 找到异常类初始化方法
             MethodBlock *init = lookupMethod(exception,
                                           "<init>", "(Ljava/lang/String;)V");
 	    if(exp && init) {
+	            // zeng: 初始化异常对象
                 executeMethod(exp, init, str);
+                // zeng: 将异常对象地址 写入 执行上下文的exception中
                 getExecEnv()->exception = exp;
             }
         }
@@ -56,6 +60,7 @@ void setException(Object *exp) {
     getExecEnv()->exception = exp;
 }
 
+// zeng: 运行上下文中exception设置为null
 void clearException() {
     getExecEnv()->exception = NULL;
 }
@@ -77,20 +82,25 @@ void printException() {
     }
 }
 
+// zeng: 方法中查找exception对应的catch block 返回handler块地址
 unsigned char *findCatchBlockInMethod(MethodBlock *mb, Class *exception, unsigned char *pc_pntr) {
+    // zeng: 获取exception_table数组地址
     ExceptionTableEntry *table = mb->exception_table;
     int size = mb->exception_table_size;
+
+    // zeng: 当前pc 距离方法code开始地址 的偏移量
     int pc = pc_pntr - mb->code;
     int i;
  
     for(i = 0; i < size; i++)
-        if((pc >= table[i].start_pc) && (pc < table[i].end_pc)) {
+        if((pc >= table[i].start_pc) && (pc < table[i].end_pc)) {   // zeng: 偏移量是否在start_pc和end_pc之间
 
             /* If the catch_type is 0 it's a finally block, which matches
                any exception.  Otherwise, the thrown exception class must
                be an instance of the caught exception class to catch it */
 
-            if(table[i].catch_type != 0) {
+            if(table[i].catch_type != 0) {  // zeng: 在catch的异常列表中查找该exception
+                // zeng: catch_type中存放的是constant_pool index, 根据index获取class对象
                 Class *caught_class = resolveClass(mb->class, table[i].catch_type, FALSE);
                 if(caught_class == NULL) {
                     clearException();
@@ -99,30 +109,35 @@ unsigned char *findCatchBlockInMethod(MethodBlock *mb, Class *exception, unsigne
                 if(!isInstanceOf(caught_class, exception))
                     continue;
             }
-            return mb->code + table[i].handler_pc;
+
+            return mb->code + table[i].handler_pc;  // zeng:找到就返回handler块代码地址
         }
 
     return NULL;
 }
-    
+
+// zeng: 当前调用链中查找exception对应的catch block 返回handler块地址
 unsigned char *findCatchBlock(Class *exception) {
+    // zeng: 执行上下文中当前栈帧
     Frame *frame = getExecEnv()->last_frame;
+
     unsigned char *handler_pc = NULL;
 
-    while(((handler_pc = findCatchBlockInMethod(frame->mb, exception, frame->last_pc)) == NULL)
-		    && (frame->prev->mb != NULL)) {
+    // zeng: 当前栈帧锁对应的方法中是否有该异常类class对象对应的catch block块
+    while(((handler_pc = findCatchBlockInMethod(frame->mb, exception, frame->last_pc)) == NULL) && (frame->prev->mb != NULL)) {
 
-        if(frame->mb->access_flags & ACC_SYNCHRONIZED) {
+        if(frame->mb->access_flags & ACC_SYNCHRONIZED) {    // zeng: synchronized方法要上锁
             Object *sync_ob = frame->mb->access_flags & ACC_STATIC ?
 		    (Object*)frame->mb->class : (Object*)frame->lvars[0];
             objectUnlock(sync_ob);
         }
-        frame = frame->prev;
+
+        frame = frame->prev;    // zeng: 没有就沿着调用链往上寻找
     }
 
-    getExecEnv()->last_frame = frame;
+    getExecEnv()->last_frame = frame;   // zeng: 找到的catch block的方法栈帧作为当前栈帧
 
-    return handler_pc;
+    return handler_pc;  // zeng: 返回
 }
 
 int mapPC2LineNo(MethodBlock *mb, unsigned char *pc_pntr) {

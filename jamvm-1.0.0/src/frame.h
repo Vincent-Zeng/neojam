@@ -18,11 +18,13 @@
  * Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
+// zeng: 调用java方法 有两种方式, 第一种是通过executeMethodArgs executeMethodVaList executeMethodList 3个c方法来调用 第二种是执行java方法解释操作码时通过`goto invokeMethod`来调用
+// zeng: 这里是通过c方法调用时 创建方法栈帧 所用 这个通过c方法调用的方法 我们称之为`top of this Java invocation` 因为`goto invokeMethod`这种调用只能在 `c方法调用的方法` 解释执行时发生
 #define CREATE_TOP_FRAME(ee, class, mb, sp, ret)                \
 {                                                               \
     Frame *last = ee->last_frame;                               \
                                                                 \
-    Frame *dummy = (Frame *)(last->ostack+last->mb->max_stack); \   // zeng: 上一个frame结构的ostack起始地址 + ostack操作数栈深度(每个操作数占u4,和指针大小一样,所以可以这样加), 即操作栈结束地址, 也即上一个栈帧结束地址 结束之后这里分配了一个名为dummy的frame结构体 TODO dummy有什么用
+    Frame *dummy = (Frame *)(last->ostack+last->mb->max_stack); \   // zeng: 上一个frame结构的ostack起始地址 + ostack操作数栈深度(每个操作数占u4,和指针大小一样,所以可以这样加), 即操作栈结束地址, 也即上一个栈帧结束地址 结束之后这里分配了一个名为dummy的frame结构体 用来判断方法是否`top of this Java invocation`
     Frame *new_frame;                                           \
                                                                 \
     sp = (u4*)(dummy+1);				                    	\   // zeng: dummy结构提接下来是返回值地址的地址
