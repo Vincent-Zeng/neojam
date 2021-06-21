@@ -65,20 +65,27 @@ void clearException() {
     getExecEnv()->exception = NULL;
 }
 
+// zeng: 调用 ee -> exception 对象的printStackTrace方法
 void printException() {
     ExecEnv *ee = getExecEnv();
     Object *exception = ee->exception;
+
+    // zeng: 查找异常类的 void printStackTrace() 方法
     MethodBlock *mb = lookupMethod(exception->class, "printStackTrace", "()V");
 
     clearException();
+
+    // zeng: 执行方法
     executeMethod(exception, mb);
 
+    // zeng: 执行printStackTrace方法的时候也发生异常了
     /* If we're really low on memory we might have been able to throw
      * OutOfMemory, but then been unable to print any part of it!  In
      * this case the VM just seems to stop... */
     if(ee->exception) {
         fprintf(stderr, "Exception occured while printing exception...\n");
-	fprintf(stderr, "Original exception was %s\n", CLASS_CB(exception->class)->name);
+
+	    fprintf(stderr, "Original exception was %s\n", CLASS_CB(exception->class)->name);
     }
 }
 

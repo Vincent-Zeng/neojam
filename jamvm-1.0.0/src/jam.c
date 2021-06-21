@@ -63,7 +63,8 @@ void initVM() {
     // zeng: 初始化用于jni的互斥量
     initialiseJNI();
 
-    // zeng: TODO
+
+    // zeng: 加载与初始化如下类
     /* No need to check for exception - if one occurs, signalException aborts VM */
     findSystemClass("java/lang/NoClassDefFoundError");
     findSystemClass("java/lang/ClassFormatError");
@@ -205,7 +206,8 @@ int main(int argc, char *argv[]) {
 
     // zeng: 获取class
     class = findSystemClass(argv[class_arg]);
-    // zeng: TODO
+
+    // zeng: 打印异常 并 退出
     if (exceptionOccured()) {
         printException();
         exit(0);
@@ -233,7 +235,7 @@ int main(int argc, char *argv[]) {
     // zeng: 执行main方法
     executeStaticMethod(class, mb, array);
 
-    // zeng: TODO
+    // zeng:  打印异常
     if (exceptionOccured())
         printException();
 
