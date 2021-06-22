@@ -38,7 +38,7 @@
 #endif
 
 /* Trace class, object and array allocation */
-#ifdef TRACEALLOC
+#ifdef TRACEALLOC   // zeng: 是否打印分配日志
 #define TRACE_ALLOC(x) printf x
 #else
 #define TRACE_ALLOC(x)
@@ -51,12 +51,12 @@
 #define TRACE_FNLZ(x)
 #endif
 
-#define OBJECT_GRAIN		8
-#define	ALLOC_BIT		1
+#define OBJECT_GRAIN        8
+#define    ALLOC_BIT        1
 
-#define HEADER(ptr)		*((unsigned int*)ptr)
-#define HDR_SIZE(hdr)		(hdr & ~(ALLOC_BIT|FLC_BIT))
-#define HDR_ALLOCED(hdr)	(hdr & ALLOC_BIT)
+#define HEADER(ptr)        *((unsigned int*)ptr)
+#define HDR_SIZE(hdr)        (hdr & ~(ALLOC_BIT|FLC_BIT))
+#define HDR_ALLOCED(hdr)    (hdr & ALLOC_BIT)
 
 /* 1 word header format
   31                                       210
@@ -70,12 +70,12 @@
 static int verbosegc;
 
 typedef struct chunk {
-    unsigned int header;
-    struct chunk *next;
+    unsigned int header;    // zeng: 这个chunk总共的字节数
+    struct chunk *next; // zeng: 下一个chunk
 } Chunk;
 
 static Chunk *freelist;
-static Chunk **chunkpp = &freelist;
+static Chunk **chunkpp = &freelist; // zeng: chunk 链表开始地址
 
 static char *heapbase;
 static char *heaplimit;
@@ -87,13 +87,13 @@ static unsigned int *markBits;
 static int markBitSize;
 
 static Object **has_finaliser_list = NULL;
-static int has_finaliser_count    = 0;
-static int has_finaliser_size     = 0;
+static int has_finaliser_count = 0;
+static int has_finaliser_size = 0;
 
 static Object **run_finaliser_list = NULL;
-static int run_finaliser_start    = 0;
-static int run_finaliser_end      = 0;
-static int run_finaliser_size     = 0;
+static int run_finaliser_start = 0;
+static int run_finaliser_end = 0;
+static int run_finaliser_size = 0;
 
 static VMLock heap_lock;
 static VMLock has_fnlzr_lock;
@@ -101,32 +101,32 @@ static VMWaitLock run_fnlzr_lock;
 
 static Object *oom;
 
-#define LIST_INCREMENT		1000
+#define LIST_INCREMENT        1000
 
-#define LOG_BYTESPERBIT		LOG_OBJECT_GRAIN /* 1 mark bit for every OBJECT_GRAIN bytes of heap */
-#define LOG_MARKSIZEBITS	5
-#define MARKSIZEBITS		32
+#define LOG_BYTESPERBIT        LOG_OBJECT_GRAIN /* 1 mark bit for every OBJECT_GRAIN bytes of heap */
+#define LOG_MARKSIZEBITS    5
+#define MARKSIZEBITS        32
 
-#define MARKENTRY(ptr)	((((char*)ptr)-heapbase)>>(LOG_BYTESPERBIT+LOG_MARKSIZEBITS))
-#define MARKOFFSET(ptr)	(((((char*)ptr)-heapbase)>>LOG_BYTESPERBIT)&(MARKSIZEBITS-1))
-#define MARK(ptr)	markBits[MARKENTRY(ptr)]|=1<<MARKOFFSET(ptr)
-#define IS_MARKED(ptr)	(markBits[MARKENTRY(ptr)]&(1<<MARKOFFSET(ptr)))
+#define MARKENTRY(ptr)    ((((char*)ptr)-heapbase)>>(LOG_BYTESPERBIT+LOG_MARKSIZEBITS))
+#define MARKOFFSET(ptr)    (((((char*)ptr)-heapbase)>>LOG_BYTESPERBIT)&(MARKSIZEBITS-1))
+#define MARK(ptr)    markBits[MARKENTRY(ptr)]|=1<<MARKOFFSET(ptr)
+#define IS_MARKED(ptr)    (markBits[MARKENTRY(ptr)]&(1<<MARKOFFSET(ptr)))
 
-#define IS_OBJECT(ptr)	(((char*)ptr) > heapbase) && \
+#define IS_OBJECT(ptr)    (((char*)ptr) > heapbase) && \
                         (((char*)ptr) < heaplimit) && \
                         !(((unsigned int)ptr)&(OBJECT_GRAIN-1))
 
 void allocMarkBits() {
-    int no_of_bits = (heaplimit-heapbase)>>LOG_BYTESPERBIT;
-    markBitSize = (no_of_bits+MARKSIZEBITS-1)>>LOG_MARKSIZEBITS;
+    int no_of_bits = (heaplimit - heapbase) >> LOG_BYTESPERBIT;
+    markBitSize = (no_of_bits + MARKSIZEBITS - 1) >> LOG_MARKSIZEBITS;
 
-    markBits = (unsigned int *) malloc(markBitSize*sizeof(*markBits));
+    markBits = (unsigned int *) malloc(markBitSize * sizeof(*markBits));
 
     TRACE_GC(("Allocated mark bits - size is %d\n", markBitSize));
 }
 
 void clearMarkBits() {
-    memset(markBits, 0, markBitSize*sizeof(*markBits));
+    memset(markBits, 0, markBitSize * sizeof(*markBits));
 }
 
 void initialiseAlloc(int min, int max, int verbose) {
@@ -137,34 +137,34 @@ void initialiseAlloc(int min, int max, int verbose) {
     char *mem = (char*)malloc(max);
     min = max;
 #else
-    char *mem = (char*)mmap(0, max, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    char *mem = (char *) mmap(0, max, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #endif
 
-    if((int)mem == 0) {
+    if ((int) mem == 0) {
         printf("Couldn't allocate the heap.  Aborting.\n");
-	    exit(0);
+        exit(0);
     }
 
     // zeng: 堆起始地址
     /* Align heapbase so that start of heap + HEADER_SIZE is object aligned */
-    heapbase = (char*)(((int)mem+HEADER_SIZE+OBJECT_GRAIN-1)&~(OBJECT_GRAIN-1))-HEADER_SIZE;
+    heapbase = (char *) (((int) mem + HEADER_SIZE + OBJECT_GRAIN - 1) & ~(OBJECT_GRAIN - 1)) - HEADER_SIZE;
 
     // zeng: 堆当前结束地址
     /* Ensure size of heap is multiple of OBJECT_GRAIN */
-    heaplimit = heapbase+((min-(heapbase-mem))&~(OBJECT_GRAIN-1));
+    heaplimit = heapbase + ((min - (heapbase - mem)) & ~(OBJECT_GRAIN - 1));
 
     // zeng: 堆最大可分配的结束地址
-    heapmax = heapbase+((max-(heapbase-mem))&~(OBJECT_GRAIN-1));
+    heapmax = heapbase + ((max - (heapbase - mem)) & ~(OBJECT_GRAIN - 1));
 
     // zeng: 堆开始地址处初始化一个chunk信息
-    freelist = (Chunk*)heapbase;
-    // zeng: header为这个chunk的大小?
-    freelist->header = heapfree = heaplimit-heapbase;
-    // zeng: 下一个chunk??
+    freelist = (Chunk *) heapbase;
+    // zeng: 刚开始的这个chunk 基本等同于当前申请到的java heap大小
+    freelist->header = heapfree = heaplimit - heapbase;
+    // zeng: 没有其他chunk了
     freelist->next = NULL;
 
     // zeng: 打gc相关日志
-    TRACE_GC(("Alloced heap size 0x%x\n",heaplimit-heapbase));
+    TRACE_GC(("Alloced heap size 0x%x\n", heaplimit - heapbase));
     // zeng: 根据堆大小来初始化mark bits,是gc用的?
     allocMarkBits();
 
@@ -179,9 +179,13 @@ void initialiseAlloc(int min, int max, int verbose) {
 }
 
 extern void markInternedStrings();
+
 extern void markClasses();
+
 extern void markJNIGlobalRefs();
+
 extern void scanThreads();
+
 void markChildren(Object *ob);
 
 static void doMark(Thread *self) {
@@ -190,7 +194,7 @@ static void doMark(Thread *self) {
 
     clearMarkBits();
 
-    if(oom) MARK(oom);
+    if (oom) MARK(oom);
     markClasses();
     markInternedStrings();
     markJNIGlobalRefs();
@@ -209,13 +213,13 @@ static void doMark(Thread *self) {
        them yet - we must mark them as they, and all objects they ref,
        cannot be deleted until the finalizer is ran... */
 
-    if(run_finaliser_end > run_finaliser_start)
-        for(i = run_finaliser_start; i < run_finaliser_end; i++)
+    if (run_finaliser_end > run_finaliser_start)
+        for (i = run_finaliser_start; i < run_finaliser_end; i++)
             MARK(run_finaliser_list[i]);
     else {
-        for(i = run_finaliser_start; i < run_finaliser_size; i++)
+        for (i = run_finaliser_start; i < run_finaliser_size; i++)
             MARK(run_finaliser_list[i]);
-        for(i = 0; i < run_finaliser_end; i++)
+        for (i = 0; i < run_finaliser_end; i++)
             MARK(run_finaliser_list[i]);
     }
 
@@ -223,7 +227,7 @@ static void doMark(Thread *self) {
        mark all marked objects - once the heap has been scanned all
        reachable objects should be marked */
 
-    for(ptr = heapbase; ptr < heaplimit;) {
+    for (ptr = heapbase; ptr < heaplimit;) {
         unsigned int hdr = HEADER(ptr);
         int size = HDR_SIZE(hdr);
 
@@ -231,10 +235,10 @@ static void doMark(Thread *self) {
         printf("Block @0x%x size %d alloced %d\n", ptr, size, HDR_ALLOCED(hdr));
 #endif
 
-        if(HDR_ALLOCED(hdr)) {
-            Object *ob = (Object*)(ptr+HEADER_SIZE);
+        if (HDR_ALLOCED(hdr)) {
+            Object *ob = (Object *) (ptr + HEADER_SIZE);
 
-            if(IS_MARKED(ob))
+            if (IS_MARKED(ob))
                 markChildren(ob);
         }
 
@@ -250,35 +254,35 @@ static void doMark(Thread *self) {
        object, as objects are only added to the has_finaliser list on
        creation */
 
-    for(i = 0, j = 0; i < has_finaliser_count; i++) {
+    for (i = 0, j = 0; i < has_finaliser_count; i++) {
         Object *ob = has_finaliser_list[i];
-  
-        if(!IS_MARKED(ob)) {
+
+        if (!IS_MARKED(ob)) {
             markChildren(ob);
-            if(run_finaliser_start == run_finaliser_end) {
+            if (run_finaliser_start == run_finaliser_end) {
                 run_finaliser_start = 0;
                 run_finaliser_end = run_finaliser_size;
                 run_finaliser_size += LIST_INCREMENT;
-                run_finaliser_list = (Object**)realloc(run_finaliser_list,
-				run_finaliser_size*sizeof(Object*));
+                run_finaliser_list = (Object **) realloc(run_finaliser_list,
+                                                         run_finaliser_size * sizeof(Object *));
             }
-	    run_finaliser_end = run_finaliser_end%run_finaliser_size;
+            run_finaliser_end = run_finaliser_end % run_finaliser_size;
             run_finaliser_list[run_finaliser_end++] = ob;
         } else {
             has_finaliser_list[j++] = ob;
-        }        
+        }
     }
 
     /* After scanning, j holds how many finalizers are left */
 
-    if(j != has_finaliser_count) {
+    if (j != has_finaliser_count) {
         has_finaliser_count = j;
 
-	/* Extra finalizers to be ran, so signal the finalizer thread
-	   in case it needs waking up.  It won't run until it's
-	   resumed */
+        /* Extra finalizers to be ran, so signal the finalizer thread
+           in case it needs waking up.  It won't run until it's
+           resumed */
 
-	notifyVMWaitLock(run_fnlzr_lock, self);
+        notifyVMWaitLock(run_fnlzr_lock, self);
     }
     unlockVMWaitLock(run_fnlzr_lock, self);
 }
@@ -302,101 +306,99 @@ static int doSweep(Thread *self) {
        the freelist.  Add all free chunks and unmarked objects and
        merge adjacent free chunks into contiguous areas */
 
-    for(ptr = heapbase; ptr < heaplimit; ) {
+    for (ptr = heapbase; ptr < heaplimit;) {
         unsigned int hdr = HEADER(ptr);
         int size = HDR_SIZE(hdr);
 
-        if(HDR_ALLOCED(hdr)) {
-            Object *ob = (Object*)(ptr+HEADER_SIZE);
+        if (HDR_ALLOCED(hdr)) {
+            Object *ob = (Object *) (ptr + HEADER_SIZE);
 
-            if(IS_MARKED(ob))
+            if (IS_MARKED(ob))
                 goto marked;
 
-	    if(ob->lock & 1) {
-	        printf("freeing ob with fat lock...\n");
-	        exit(0);
+            if (ob->lock & 1) {
+                printf("freeing ob with fat lock...\n");
+                exit(0);
             }
 
             freed += size;
             unmarked++;
 
             TRACE_GC(("FREE: Freeing ob @ 0x%x class %s - start of block\n", ob,
-				    ob->class ? CLASS_CB(ob->class)->name : "?"));
-        }
-        else
-            TRACE_GC(("FREE: Unalloced block @ 0x%x size %d - start of block\n", ptr, size));
-        
+                    ob->class ? CLASS_CB(ob->class)->name : "?"));
+        } else
+                TRACE_GC(("FREE: Unalloced block @ 0x%x size %d - start of block\n", ptr, size));
+
         /* Add chunk onto the freelist */
         last->next = (Chunk *) ptr;
         last = last->next;
 
         /* Clear the alloc and flc bits in the header */
-        last->header &= ~(ALLOC_BIT|FLC_BIT);
+        last->header &= ~(ALLOC_BIT | FLC_BIT);
 
         /* Scan the next chunks - while they are
            free, merge them onto the first free
            chunk */
 
-        for(;;) {
+        for (;;) {
             ptr += size;
 
-            if(ptr>=heaplimit)
+            if (ptr >= heaplimit)
                 goto out_last_free;
 
             hdr = HEADER(ptr);
             size = HDR_SIZE(hdr);
-            if(HDR_ALLOCED(hdr)) {
-                Object *ob = (Object*)(ptr+HEADER_SIZE);
+            if (HDR_ALLOCED(hdr)) {
+                Object *ob = (Object *) (ptr + HEADER_SIZE);
 
-                if(IS_MARKED(ob))
+                if (IS_MARKED(ob))
                     break;
 
-	    if(ob->lock & 1) {
-	        printf("freeing ob with fat lock...\n");
-	        exit(0);
-            }
+                if (ob->lock & 1) {
+                    printf("freeing ob with fat lock...\n");
+                    exit(0);
+                }
 
                 freed += size;
                 unmarked++;
 
                 TRACE_GC(("FREE: Freeing object @ 0x%x class %s - merging onto block @ 0x%x\n",
-                                       ob, ob->class ? CLASS_CB(ob->class)->name : "?", last));
+                        ob, ob->class ? CLASS_CB(ob->class)->name : "?", last));
 
-            }
-            else 
-                TRACE_GC(("FREE: unalloced block @ 0x%x size %d - merging onto block @ 0x%x\n", ptr, size, last));
+            } else
+                    TRACE_GC(("FREE: unalloced block @ 0x%x size %d - merging onto block @ 0x%x\n", ptr, size, last));
             last->header += size;
         }
 
         /* Scanned to next marked object see if it's
            the largest so far */
 
-        if(last->header > largest)
+        if (last->header > largest)
             largest = last->header;
 
         /* Add onto total count of free chunks */
         heapfree += last->header;
 
-marked:
+        marked:
         marked++;
 
         /* Skip to next block */
         ptr += size;
 
-        if(ptr >= heaplimit)
+        if (ptr >= heaplimit)
             goto out_last_marked;
     }
 
-out_last_free:
+    out_last_free:
 
     /* Last chunk is free - need to check if
        largest */
-    if(last->header > largest)
+    if (last->header > largest)
         largest = last->header;
 
     heapfree += last->header;
 
-out_last_marked:
+    out_last_marked:
 
     /* We've now reconstructed the freelist, set freelist
        pointer to new list */
@@ -408,20 +410,20 @@ out_last_marked:
     chunkpp = &freelist;
 
 #ifdef DEBUG
-{
-    Chunk *c;
-    for(c = freelist; c != NULL; c = c->next)
-        printf("Chunk @0x%x size: %d\n", c, c->header);
-}
+    {
+        Chunk *c;
+        for(c = freelist; c != NULL; c = c->next)
+            printf("Chunk @0x%x size: %d\n", c, c->header);
+    }
 #endif
 
-    if(verbosegc) {
-        int size = heaplimit-heapbase;
-        long long pcnt_used = ((long long)heapfree)*100/size;
+    if (verbosegc) {
+        int size = heaplimit - heapbase;
+        long long pcnt_used = ((long long) heapfree) * 100 / size;
         printf("<GC: Allocated objects: %d>\n", marked);
         printf("<GC: Freed %d objects using %d bytes>\n", unmarked, freed);
         printf("<GC: Largest block is %d total free is %d out of %d (%lld%)>\n",
-                         largest, heapfree, size, pcnt_used);
+               largest, heapfree, size, pcnt_used);
     }
 
     /* Return the size of the largest free chunk in heap - this
@@ -436,30 +438,31 @@ out_last_marked:
  * back-to-back enable/disable... */
 
 static Thread *runningFinalizers = NULL;
+
 static int runFinalizers() {
     Thread *self = threadSelf();
     int ret = FALSE;
 
     lockVMWaitLock(run_fnlzr_lock, self);
 
-    if(runningFinalizers == self)
+    if (runningFinalizers == self)
         goto out;
 
-    while(runningFinalizers) {
+    while (runningFinalizers) {
         ret = TRUE;
         waitVMWaitLock(run_fnlzr_lock, self);
     }
 
-    if((run_finaliser_start == run_finaliser_size) && (run_finaliser_end == 0))
+    if ((run_finaliser_start == run_finaliser_size) && (run_finaliser_end == 0))
         goto out;
 
     runningFinalizers = self;
 
-    TRACE_FNLZ(("run_finaliser_start %d\n",run_finaliser_start));
-    TRACE_FNLZ(("run_finaliser_end %d\n",run_finaliser_end));
-    TRACE_FNLZ(("run_finaliser_size %d\n",run_finaliser_size));
+    TRACE_FNLZ(("run_finaliser_start %d\n", run_finaliser_start));
+    TRACE_FNLZ(("run_finaliser_end %d\n", run_finaliser_end));
+    TRACE_FNLZ(("run_finaliser_size %d\n", run_finaliser_size));
 
-    if(verbosegc) {
+    if (verbosegc) {
         int diff = run_finaliser_end - run_finaliser_start;
         printf("<Running %d finalizers>\n", diff > 0 ? diff : diff + run_finaliser_size);
     }
@@ -470,14 +473,14 @@ static int runFinalizers() {
         ob = run_finaliser_list[run_finaliser_start];
 
         unlockVMWaitLock(run_fnlzr_lock, self);
-	    enableSuspend(self);
+        enableSuspend(self);
 
-	/* Run the finalizer method */
+        /* Run the finalizer method */
         executeMethod(ob, CLASS_CB(ob->class)->finalizer);
 
-	/* We entered with suspension off - nothing
-	 * else interesting on stack, so use previous
-	 * stack top. */
+        /* We entered with suspension off - nothing
+         * else interesting on stack, so use previous
+         * stack top. */
 
         disableSuspend0(self, getStackTop(self));
         lockVMWaitLock(run_fnlzr_lock, self);
@@ -485,33 +488,34 @@ static int runFinalizers() {
         /* Clear any exceptions - exceptions thrown in finalizers are
            silently ignored */
 
-	    clearException();
-    } while(++run_finaliser_start != run_finaliser_end);
+        clearException();
+    } while (++run_finaliser_start != run_finaliser_end);
 
     run_finaliser_start = run_finaliser_size;
     run_finaliser_end = 0;
     runningFinalizers = NULL;
 
     ret = TRUE;
-out:
+    out:
     notifyVMWaitLock(run_fnlzr_lock, self);
     unlockVMWaitLock(run_fnlzr_lock, self);
     return ret;
 }
 
 static long getTime() {
-   struct timeval tv;
+    struct timeval tv;
 
-   gettimeofday(&tv, 0);
-   return tv.tv_usec;
+    gettimeofday(&tv, 0);
+    return tv.tv_usec;
 }
 
 static long endTime(long start) {
     long time = getTime() - start;
 
-    return time < 0 ? 1000000-time : time;
+    return time < 0 ? 1000000 - time : time;
 }
 
+// zeng: 很明显是 标记 - 清除算法
 int gc0() {
     Thread *self = threadSelf();
     long start;
@@ -519,19 +523,21 @@ int gc0() {
     float mark_time;
     int largest;
 
+    // zeng: 暂停所有其他线程
     suspendAllThreads(self);
 
     start = getTime();
     doMark(self);
-    scan_time = endTime(start)/1000000.0;
+    scan_time = endTime(start) / 1000000.0;
 
     start = getTime();
     largest = doSweep(self);
-    mark_time = endTime(start)/1000000.0;
+    mark_time = endTime(start) / 1000000.0;
 
+    // zeng: 恢复所有其他线程
     resumeAllThreads(self);
 
-    if(verbosegc)
+    if (verbosegc)
         printf("<GC: Mark took %f seconds, scan took %f seconds>\n", scan_time, mark_time);
 
     return largest;
@@ -550,28 +556,28 @@ void expandHeap(int min) {
     Chunk *chunk, *new;
     int delta;
 
-    if(verbosegc)
+    if (verbosegc)
         printf("<GC: Expanding heap - minimum needed is %d>\n", min);
 
-    delta = (heaplimit-heapbase)/2;
+    delta = (heaplimit - heapbase) / 2;
     delta = delta < min ? min : delta;
 
-    if((heaplimit + delta) > heapmax)
+    if ((heaplimit + delta) > heapmax)
         delta = heapmax - heaplimit;
 
     /* Ensure new region is multiple of object grain in size */
 
-    delta = (delta&~(OBJECT_GRAIN-1));
+    delta = (delta & ~(OBJECT_GRAIN - 1));
 
-    if(verbosegc)
+    if (verbosegc)
         printf("<GC: Expanding heap by %d bytes>\n", delta);
 
     /* The freelist is in address order - find the last
        free chunk and add the new area to the end.  */
 
-    for(chunk = freelist; chunk->next != NULL; chunk = chunk->next);
+    for (chunk = freelist; chunk->next != NULL; chunk = chunk->next);
 
-    new = (Chunk*)heaplimit;
+    new = (Chunk *) heaplimit;
     new->header = delta;
     new->next = 0;
 
@@ -586,11 +592,13 @@ void expandHeap(int min) {
     allocMarkBits();
 }
 
-// zeng: TODO 如何分配 分配时如何gc
+// zeng: 在java heap中申请len字节的内存 java heap是jvm自己管理的(管理有很多方式 都是在 分配效率 和 回收效率 做权衡, 这也意味 分配算法 和 回收算法之间 要搭配)
 void *gcMalloc(int len) {
     static int state = 0; /* allocation failure action */
 
-    int n = (len+HEADER_SIZE+OBJECT_GRAIN-1)&~(OBJECT_GRAIN-1);
+    // zeng: 本次申请消耗内存 = len + chunk结构体4字节 + 对齐
+    int n = (len + HEADER_SIZE + OBJECT_GRAIN - 1) & ~(OBJECT_GRAIN - 1);
+
     Chunk *found;
     int largest;
     Thread *self;
@@ -601,51 +609,58 @@ void *gcMalloc(int len) {
     /* See comment below */
     char *ret_addr;
 
+    // zeng: 不接收暂停信号
     disableSuspend(self = threadSelf());
+
+    // zeng: 进行堆操作要上锁
     lockVMLock(heap_lock, self);
 
     /* Scan freelist looking for a chunk big enough to
        satisfy allocation request */
 
-    for(;;) {
+    for (;;) {
 #ifdef TRACEALLOC
-       tries = 0;
+        tries = 0;
 #endif
-        while(*chunkpp) {
-            int len = (*chunkpp)->header;
+        while (*chunkpp) {
+            int len = (*chunkpp)->header;   // zeng: 这个chunk有多少字节
 
-            if(len == n) {
-                found = *chunkpp;
-                *chunkpp = found->next;
+            if (len == n) { // zeng: 刚好等于本次申请消耗内存
+                found = *chunkpp;   // zeng: 就用chunk这段内存了
+                *chunkpp = found->next; // zeng: 从 free chunk 链表 中移除这个chunk
                 goto gotIt;
             }
 
-            if(len > n) {
+            if (len > n) {  // zeng: chunk比`本次申请消耗内存`大
                 Chunk *rem;
                 found = *chunkpp;
-                rem = (Chunk*)((char*)found + n);
-                rem->header = len - n;
-                rem->next = found->next;
-                *chunkpp = rem;
+                rem = (Chunk *) ((char *) found + n);   // zeng: chunk开头取n字节
+
+                rem->header = len - n;  // zeng: 更新这个chunk的大小
+                rem->next = found->next;    // zeng: 复制原chunk结构体的next
+                *chunkpp = rem; // zeng: 更新这个chunk的开始地址
                 goto gotIt;
             }
+
+            // zeng: chunk比`本次申请消耗内存`小 找下一个chunk
             chunkpp = &(*chunkpp)->next;
+
 #ifdef TRACEALLOC
-            tries++;
+            tries++;    // zeng: 遍历经过1个chunk 就+1
 #endif
         }
 
-	if(verbosegc)
+        if (verbosegc)
             printf("<GC: Alloc attempt for %d bytes failed (state %d).>\n", n, state);
 
-	switch(state) {
+        switch (state) {
 
-            case 0:
-                largest = gc0();
-                if(n <= largest)
-		    break;
+            case 0: // zeng: 当前chunk list链表中分配不到需要的内存
+                largest = gc0();    // zeng: TODO
+                if (n <= largest)
+                    break;
 
-	        state = 1;
+                state = 1;
 
             case 1: {
                 int res;
@@ -654,62 +669,65 @@ void *gcMalloc(int len) {
                 res = runFinalizers();
                 lockVMLock(heap_lock, self);
 
-		if(state == 1) {
-                    if(res) {
+                if (state == 1) {
+                    if (res) {
                         largest = gc0();
-                        if(n <= largest) {
+                        if (n <= largest) {
                             state = 0;
-			    break;
-		        }
+                            break;
+                        }
                     }
-		    state = 2;
-		}
-		break;
-
-            case 2:
-                if(heaplimit < heapmax) {
-	            expandHeap(n);
-		    state = 0;
-		    break;
-                } else {
-                    if(verbosegc)
-                        printf("<GC: Stack at maximum already - completely out of heap space>\n");
-
-		    state = 3;
-                    /* Reset next allocation block
-		     * to beginning of list */
-                    chunkpp = &freelist;
-                    enableSuspend(self);
-                    unlockVMLock(heap_lock, self);
-                    signalException("java/lang/OutOfMemoryError", NULL);
-                    return NULL;
+                    state = 2;
                 }
-		break;
+                break;
+
+                case 2:
+                    if (heaplimit < heapmax) {
+                        expandHeap(n);
+                        state = 0;
+                        break;
+                    } else {
+                        if (verbosegc)
+                            printf("<GC: Stack at maximum already - completely out of heap space>\n");
+
+                        state = 3;
+                        /* Reset next allocation block
+                 * to beginning of list */
+                        chunkpp = &freelist;
+                        enableSuspend(self);
+                        unlockVMLock(heap_lock, self);
+                        signalException("java/lang/OutOfMemoryError", NULL);
+                        return NULL;
+                    }
+                break;
             }
 
             case 3:
-		/* Already throwing an OutOfMemoryError in some thread.  In both
-		 * cases, throw an already prepared OOM (no stacktrace).  Could have a
-		 * per-thread flag, so we try to throw a new OOM in each thread, but
-		 * if we're this low on memory I doubt it'll make much difference.
-		 */
+                /* Already throwing an OutOfMemoryError in some thread.  In both
+                 * cases, throw an already prepared OOM (no stacktrace).  Could have a
+                 * per-thread flag, so we try to throw a new OOM in each thread, but
+                 * if we're this low on memory I doubt it'll make much difference.
+                 */
 
-		state = 0;
+                state = 0;
                 enableSuspend(self);
                 unlockVMLock(heap_lock, self);
-		setException(oom);
+                setException(oom);
                 return NULL;
                 break;
         }
     }
 
-gotIt:
+    gotIt:
 #ifdef TRACEALLOC
     printf("<ALLOC: took %d tries to find block.>\n", tries);
 #endif
 
+    // zeng: java heap 还剩多少内存
     heapfree -= n;
 
+    // zeng: header最右边1位 置为 1, 表示这个 chunk 已经分配出去了
+    // zeng: 因为n已经使用`粒度对齐`来保证n的大小是8的倍数,也就是最右3位都为0, 所以这里可以使用最右3位来作为标志位记录其他信息
     /* Mark found chunk as allocated */
     found->header = n | ALLOC_BIT;
 
@@ -717,10 +735,16 @@ gotIt:
      * where new object ref is not held and will therefore be gc'ed.
      * Setup ret_addr before unlocking to prevent this.
      */
-   
-    ret_addr = ((char*)found)+HEADER_SIZE;
-    memset(ret_addr, 0, n-HEADER_SIZE);
+
+    // zeng: 逃过chunk结构体 才是申请到的内存的开始地址
+    ret_addr = ((char *) found) + HEADER_SIZE;
+
+    // zeng: 内存每个bit都设为0
+    memset(ret_addr, 0, n - HEADER_SIZE);
+
+    // zeng: 允许被暂停
     enableSuspend(self);
+    // zeng: 释放锁
     unlockVMLock(heap_lock, self);
 
     return ret_addr;
@@ -745,13 +769,13 @@ void markClassStatics(Class *class) {
 
     TRACE_GC(("Marking static fields for class %s\n", cb->name));
 
-    for(i = 0; i < cb->fields_count; i++, fb++)
-        if((fb->access_flags & ACC_STATIC) &&
-                    ((*fb->type == 'L') || (*fb->type == '['))) {
-            Object *ob = (Object *)fb->static_value;
+    for (i = 0; i < cb->fields_count; i++, fb++)
+        if ((fb->access_flags & ACC_STATIC) &&
+            ((*fb->type == 'L') || (*fb->type == '['))) {
+            Object *ob = (Object *) fb->static_value;
             TRACE_GC(("Field %s %s\n", fb->name, fb->type));
             TRACE_GC(("Object @0x%x is valid %d\n", ob, IS_OBJECT(ob)));
-            if(IS_OBJECT(ob) && !IS_MARKED(ob))
+            if (IS_OBJECT(ob) && !IS_MARKED(ob))
                 markChildren(ob);
         }
 }
@@ -765,34 +789,34 @@ void scanThread(Thread *thread) {
 
     MARK(ee->thread);
 
-    slot = (u4*)getStackTop(thread);
-    end = (u4*)getStackBase(thread);
+    slot = (u4 *) getStackTop(thread);
+    end = (u4 *) getStackBase(thread);
 
-    for(; slot < end; slot++)
-        if(IS_OBJECT(*slot)) {
-            Object *ob = (Object*)*slot;
+    for (; slot < end; slot++)
+        if (IS_OBJECT(*slot)) {
+            Object *ob = (Object *) *slot;
             TRACE_GC(("Found C stack ref @0x%x object ref is 0x%x\n", slot, ob));
             MARK(ob);
         }
 
     slot = frame->ostack + frame->mb->max_stack;
 
-    while(frame->prev != NULL) {
-        if(frame->mb != NULL) {
+    while (frame->prev != NULL) {
+        if (frame->mb != NULL) {
             TRACE_GC(("Scanning %s.%s\n", CLASS_CB(frame->mb->class)->name, frame->mb->name));
             TRACE_GC(("lvars @0x%x ostack @0x%x\n", frame->lvars, frame->ostack));
         }
 
         end = frame->ostack;
 
-        for(; slot >= end; slot--)
-            if(IS_OBJECT(*slot)) {
-                Object *ob = (Object*)*slot;
+        for (; slot >= end; slot--)
+            if (IS_OBJECT(*slot)) {
+                Object *ob = (Object *) *slot;
                 TRACE_GC(("Found Java stack ref @0x%x object ref is 0x%x\n", slot, ob));
                 MARK(ob);
             }
 
-        slot -= sizeof(Frame)/4;
+        slot -= sizeof(Frame) / 4;
         frame = frame->prev;
     }
 }
@@ -809,28 +833,28 @@ void markChildren(Object *ob) {
 
     MARK(ob);
 
-    if(ob->class == NULL)
+    if (ob->class == NULL)
         return;
- 
-    if(IS_CLASS(ob)) {
+
+    if (IS_CLASS(ob)) {
         TRACE_GC(("Found class object @0x%x name is %s\n", ob, CLASS_CB(ob)->name));
-        markClassStatics((Class*)ob);
+        markClassStatics((Class *) ob);
     } else {
         Class *class = ob->class;
         ClassBlock *cb = CLASS_CB(class);
         u4 *body = INST_DATA(ob);
 
-        if(cb->name[0] == '[') {
-            if((cb->name[1] == 'L') || (cb->name[1] == '[')) {
+        if (cb->name[0] == '[') {
+            if ((cb->name[1] == 'L') || (cb->name[1] == '[')) {
                 int len = body[0];
                 int i;
                 TRACE_GC(("Scanning Array object @0x%x class is %s len is %d\n", ob, cb->name, len));
 
-                for(i = 1; i <= len; i++) {
-                    Object *ob = (Object *)body[i];
-                    TRACE_GC(("Object at index %d is @0x%x is valid %d\n", i-1, ob, IS_OBJECT(ob)));
+                for (i = 1; i <= len; i++) {
+                    Object *ob = (Object *) body[i];
+                    TRACE_GC(("Object at index %d is @0x%x is valid %d\n", i - 1, ob, IS_OBJECT(ob)));
 
-                    if(IS_OBJECT(ob) && !IS_MARKED(ob))
+                    if (IS_OBJECT(ob) && !IS_MARKED(ob))
                         markChildren(ob);
                 }
             } else {
@@ -845,25 +869,25 @@ void markChildren(Object *ob) {
             /* Scan fieldblocks in current class and all super-classes
                and mark all object refs */
 
-            for(;;) {
+            for (;;) {
                 fb = cb->fields;
 
                 TRACE_GC(("scanning fields of class %s\n", cb->name));
 
-                for(i = 0; i < cb->fields_count; i++, fb++)
-                    if(!(fb->access_flags & ACC_STATIC) &&
+                for (i = 0; i < cb->fields_count; i++, fb++)
+                    if (!(fb->access_flags & ACC_STATIC) &&
                         ((*fb->type == 'L') || (*fb->type == '['))) {
-                            Object *ob = (Object *)body[fb->offset];
-                            TRACE_GC(("Field %s %s is an Object ref\n", fb->name, fb->type));
-                            TRACE_GC(("Object @0x%x is valid %d\n", ob, IS_OBJECT(ob)));
+                        Object *ob = (Object *) body[fb->offset];
+                        TRACE_GC(("Field %s %s is an Object ref\n", fb->name, fb->type));
+                        TRACE_GC(("Object @0x%x is valid %d\n", ob, IS_OBJECT(ob)));
 
-                            if(IS_OBJECT(ob) && !IS_MARKED(ob))
-                                markChildren(ob);
+                        if (IS_OBJECT(ob) && !IS_MARKED(ob))
+                            markChildren(ob);
                     }
                 class = cb->super;
-                if(class == NULL)
+                if (class == NULL)
                     break;
-                cb = CLASS_CB(class); 
+                cb = CLASS_CB(class);
             }
         }
     }
@@ -877,11 +901,11 @@ int freeHeapMem() {
 }
 
 int totalHeapMem() {
-    return heaplimit-heapbase;
+    return heaplimit - heapbase;
 }
 
 int maxHeapMem() {
-    return heapmax-heapbase;
+    return heapmax - heapbase;
 }
 
 /* The async gc loop.  It sleeps for 1 second and
@@ -889,9 +913,9 @@ int maxHeapMem() {
  * changed */
 
 void asyncGCThreadLoop(Thread *self) {
-    for(;;) {
+    for (;;) {
         threadSleep(self, 1000, 0);
-        if(systemIdle(self))
+        if (systemIdle(self))
             gc1();
     }
 }
@@ -903,9 +927,9 @@ void asyncGCThreadLoop(Thread *self) {
 void finalizerThreadLoop(Thread *self) {
     disableSuspend0(self, &self);
 
-    for(;;) {
+    for (;;) {
         lockVMWaitLock(run_fnlzr_lock, self);
-	    waitVMWaitLock(run_fnlzr_lock, self);
+        waitVMWaitLock(run_fnlzr_lock, self);
         unlockVMWaitLock(run_fnlzr_lock, self);
         runFinalizers();
     }
@@ -917,9 +941,9 @@ void initialiseGC(int noasyncgc) {
 
     MethodBlock *init;
     Class *oom_clazz = findSystemClass("java/lang/OutOfMemoryError");
-    if(exceptionOccured()) {
+    if (exceptionOccured()) {
         printException();
-	exit(1);
+        exit(1);
     }
 
     init = lookupMethod(oom_clazz, "<init>", "(Ljava/lang/String;)V");
@@ -931,7 +955,7 @@ void initialiseGC(int noasyncgc) {
     createVMThread("Finalizer", finalizerThreadLoop);
 
     // zeng: TODO
-    if(!noasyncgc)
+    if (!noasyncgc)
         createVMThread("Async GC", asyncGCThreadLoop);
 }
 
@@ -943,11 +967,11 @@ void initialiseGC(int noasyncgc) {
     disableSuspend(self = threadSelf());                                           \
     lockVMLock(has_fnlzr_lock, self);                                              \
     TRACE_FNLZ(("Object @0x%x type %s has a finalize method...\n",                 \
-			                          ob, CLASS_CB(ob->class)->name)); \
+                                      ob, CLASS_CB(ob->class)->name)); \
     if(has_finaliser_count == has_finaliser_size) {                                \
         has_finaliser_size += LIST_INCREMENT;                                      \
         has_finaliser_list = (Object**)realloc(has_finaliser_list,                 \
-			                       has_finaliser_size*sizeof(Object*));\
+                                   has_finaliser_size*sizeof(Object*));\
     }                                                                              \
                                                                                    \
     has_finaliser_list[has_finaliser_count++] = ob;                                \
@@ -962,15 +986,14 @@ Object *allocObject(Class *class) {
     int size = cb->object_size * 4;
 
     // zeng: 对象内容字节数 + Object数据结构大小
-    Object *ob = (Object *)gcMalloc(size+sizeof(Object));
+    Object *ob = (Object *) gcMalloc(size + sizeof(Object));
 
-    if(ob != NULL) {
+    if (ob != NULL) {
         // zeng: object数据结构的class 指向 对象 对应的类
         ob->class = class;
 
         // zeng: 如果类中有finalize方法
-        if(cb->finalizer != NULL)
-            ADD_FINALIZED_OBJECT(ob);
+        if (cb->finalizer != NULL) ADD_FINALIZED_OBJECT(ob);
 
         // zeng: 打印分配日志
         TRACE_ALLOC(("<ALLOC: allocated %s object @ 0x%x>\n", cb->name, ob));
@@ -983,15 +1006,15 @@ Object *allocObject(Class *class) {
 Object *allocArray(Class *class, int size, int el_size) {
     Object *ob;
 
-    if(size < 0) {
+    if (size < 0) {
         signalException("java/lang/NegativeArraySizeException", NULL);
         return NULL;
     }
 
     // zeng: 分配数组对象空间 返回对象地址 (元素所占字节 + 长度数值所占字节 + Object结构体所占字节)
-    ob = (Object *)gcMalloc(size * el_size + 4 + sizeof(Object));
+    ob = (Object *) gcMalloc(size * el_size + 4 + sizeof(Object));
 
-    if(ob != NULL) {
+    if (ob != NULL) {
         // zeng: 对象体刚开始是数组长度
         *INST_DATA(ob) = size;
 
@@ -1011,7 +1034,7 @@ Object *allocTypeArray(int type, int size) {
     int el_size;
 
     // zeng: 找到基本类型对应的class
-    switch(type) {
+    switch (type) {
         case T_BYTE:
         case T_BOOLEAN:
             class = findArrayClass("[B");
@@ -1062,22 +1085,24 @@ Object *allocMultiArray(Class *array_class, int dim, int *count) {
     int i;
     Object *array;
 
-    if(dim > 1) {
-        Class *aclass = findArrayClassFromClass(CLASS_CB(array_class)->name+1, array_class);    // zeng: 第1个维度下元素类型class对象
+    if (dim > 1) {
+        Class *aclass = findArrayClassFromClass(CLASS_CB(array_class)->name + 1,
+                                                array_class);    // zeng: 第1个维度下元素类型class对象
 
         array = allocArray(array_class, *count, 4);
 
-	    if(array == NULL)
+        if (array == NULL)
             return NULL;
 
-        for(i = 1; i <= *count; i++)    // zeng: 第1个维度下遍历元素, 由于元素类型也是数组, 所以递归调用
-            INST_DATA(array)[i] = (u4)allocMultiArray(aclass, dim-1, count+1);  // zeng: 返回值是数组对象地址 所以每个格子保存的都是数组对象地址
+        for (i = 1; i <= *count; i++)    // zeng: 第1个维度下遍历元素, 由于元素类型也是数组, 所以递归调用
+            INST_DATA(array)[i] = (u4) allocMultiArray(aclass, dim - 1,
+                                                       count + 1);  // zeng: 返回值是数组对象地址 所以每个格子保存的都是数组对象地址
 
     } else {    // zeng: 递归出口
         int el_size;
 
         // zeng: 根据类型分配元素字节数
-        switch(CLASS_CB(array_class)->name[1]) {
+        switch (CLASS_CB(array_class)->name[1]) {
             case 'B':
             case 'Z':
                 el_size = 1;
@@ -1108,7 +1133,7 @@ Object *allocMultiArray(Class *array_class, int dim, int *count) {
 
 Class *allocClass() {
     // zeng: 从java heap中分配一个 Class + ClassBlock的空间 也就是Class后紧接着就是ClassBlock
-    Class *class = (Class*)gcMalloc(sizeof(ClassBlock)+sizeof(Class));
+    Class *class = (Class *) gcMalloc(sizeof(ClassBlock) + sizeof(Class));
 
     // zeng: 打印分配日志
     TRACE_ALLOC(("<ALLOC: allocated class object @ 0x%x>\n", class));
@@ -1117,17 +1142,16 @@ Class *allocClass() {
 }
 
 Object *cloneObject(Object *ob) {
-    unsigned int hdr = HEADER((((char*)ob)-HEADER_SIZE));
-    int size = HDR_SIZE(hdr)-HEADER_SIZE;
-    Object *clone = (Object*)gcMalloc(size);
+    unsigned int hdr = HEADER((((char *) ob) - HEADER_SIZE));
+    int size = HDR_SIZE(hdr) - HEADER_SIZE;
+    Object *clone = (Object *) gcMalloc(size);
 
-    if(clone != NULL) {
+    if (clone != NULL) {
         memcpy(clone, ob, size);
 
-	clone->lock = 0;
+        clone->lock = 0;
 
-        if(CLASS_CB(clone->class)->finalizer != NULL)
-            ADD_FINALIZED_OBJECT(clone);
+        if (CLASS_CB(clone->class)->finalizer != NULL) ADD_FINALIZED_OBJECT(clone);
 
         TRACE_ALLOC(("<ALLOC: cloned object @ 0x%x clone @ 0x:%x>\n", ob, clone));
     }

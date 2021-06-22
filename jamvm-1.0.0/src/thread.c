@@ -442,6 +442,7 @@ void mainThreadWaitToExitVM() {
     enableSuspend(self);
 }
 
+// zeng: TODO
 void suspendAllThreads(Thread *self) {
     Thread *thread;
 

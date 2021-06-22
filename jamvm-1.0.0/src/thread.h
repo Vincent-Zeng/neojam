@@ -73,6 +73,7 @@ extern int systemIdle(Thread *self);
 extern void disableSuspend0(Thread *thread, void *stack_top);
 extern void enableSuspend(Thread *thread);
 
+// zeng: TODO
 #define disableSuspend(thread)          \
 {                                       \
     sigjmp_buf *env;                    \
@@ -94,6 +95,7 @@ typedef pthread_mutex_t VMLock;
     pthread_cond_init(&wait_lock.cv, NULL);    \
 }
 
+// zeng: 争取互斥锁
 #define lockVMLock(lock, self) { \
     self->state = WAITING;       \
     pthread_mutex_lock(&lock);   \
