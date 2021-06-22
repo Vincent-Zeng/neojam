@@ -516,6 +516,7 @@ createArrayClass(char *classname, Object *class_loader) {
     return addClassToHash(class);
 }
 
+// zeng: TODO
 Class *
 createPrimClass(char *classname) {
     Class *class;
@@ -922,10 +923,11 @@ Class *findClassFromClassLoader(char *classname, Object *loader) {
 
 /* gc support for marking classes */
 
-#define ITERATE(ptr)  markClass(ptr)
+#define ITERATE(ptr)  markClass(ptr)    // zeng: 遍历loaded_classes hash表时每个元素都调用markClass
 
 extern void markClass(Class *ob);
 
+// zeng 所有class对象都标记
 void markClasses() {
     int i;
 

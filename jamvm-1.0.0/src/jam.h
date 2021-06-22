@@ -411,6 +411,7 @@ typedef struct exec_env {
 // zeng: 对象组织方式是 object结构体 + 内容体, 这里就是根据结构体去取内容开始地址
 #define INST_DATA(objectRef)		((u4*)(objectRef+1))
 
+// zeng: 是Class对象
 #define IS_CLASS(object)		(!object->class || (object->class == java_lang_Class))
 
 #define IS_INTERFACE(cb) (cb->access_flags & ACC_INTERFACE)

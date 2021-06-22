@@ -105,26 +105,29 @@ static Object *oom;
 
 #define LOG_BYTESPERBIT        LOG_OBJECT_GRAIN /* 1 mark bit for every OBJECT_GRAIN bytes of heap */
 #define LOG_MARKSIZEBITS    5
-#define MARKSIZEBITS        32
+#define MARKSIZEBITS        32  // zeng: 用来记录mark
 
-#define MARKENTRY(ptr)    ((((char*)ptr)-heapbase)>>(LOG_BYTESPERBIT+LOG_MARKSIZEBITS))
-#define MARKOFFSET(ptr)    (((((char*)ptr)-heapbase)>>LOG_BYTESPERBIT)&(MARKSIZEBITS-1))
-#define MARK(ptr)    markBits[MARKENTRY(ptr)]|=1<<MARKOFFSET(ptr)
-#define IS_MARKED(ptr)    (markBits[MARKENTRY(ptr)]&(1<<MARKOFFSET(ptr)))
+#define MARKENTRY(ptr)    ((((char*)ptr)-heapbase)>>(LOG_BYTESPERBIT+LOG_MARKSIZEBITS)) // zeng: u4型在markBits内的位置
+#define MARKOFFSET(ptr)    (((((char*)ptr)-heapbase)>>LOG_BYTESPERBIT) & (MARKSIZEBITS-1)) // zeng: `& (MARKSIZEBITS-1)` 取u4型内的bit位置
+#define MARK(ptr)    markBits[MARKENTRY(ptr)] |= 1 << MARKOFFSET(ptr)   // zeng: 使用该地址所在字节 找到 标记位图 中对应位 置为1
+#define IS_MARKED(ptr)    (markBits[MARKENTRY(ptr)] & (1<<MARKOFFSET(ptr))) // zeng: 标记位图中对应位 是否为1
 
+// zeng: 地址在java heap地址区间内, 而且是8字节对齐的,就是对象地址 TODO 不会有其他非地址操作数满足这个条件吗
 #define IS_OBJECT(ptr)    (((char*)ptr) > heapbase) && \
                         (((char*)ptr) < heaplimit) && \
-                        !(((unsigned int)ptr)&(OBJECT_GRAIN-1))
+                        !(((unsigned int)ptr)&(OBJECT_GRAIN-1)) // zeng: 是8字节对齐的
 
+// zeng: 分配标记位图
 void allocMarkBits() {
-    int no_of_bits = (heaplimit - heapbase) >> LOG_BYTESPERBIT;
-    markBitSize = (no_of_bits + MARKSIZEBITS - 1) >> LOG_MARKSIZEBITS;
+    int no_of_bits = (heaplimit - heapbase) >> LOG_BYTESPERBIT; // zeng: 内存中每个bytes用1个bit标记
+    markBitSize = (no_of_bits + MARKSIZEBITS - 1) >> LOG_MARKSIZEBITS;  // zeng: bit 折合多少个 u4型 数( `MARKSIZEBITS - 1` 用于向上取整)
 
-    markBits = (unsigned int *) malloc(markBitSize * sizeof(*markBits));
+    markBits = (unsigned int *) malloc(markBitSize * sizeof(*markBits));    // zeng: 分配 `markBitSize * 4Byte`用做标记位图 这里还用的是malloc 所以是在java heap外另外申请了一段内存 这内存也不小啊 是java heap的1/8了
 
     TRACE_GC(("Allocated mark bits - size is %d\n", markBitSize));
 }
 
+// zeng: 标记位图所有位置0
 void clearMarkBits() {
     memset(markBits, 0, markBitSize * sizeof(*markBits));
 }
@@ -165,7 +168,7 @@ void initialiseAlloc(int min, int max, int verbose) {
 
     // zeng: 打gc相关日志
     TRACE_GC(("Alloced heap size 0x%x\n", heaplimit - heapbase));
-    // zeng: 根据堆大小来初始化mark bits,是gc用的?
+    // zeng: 根据堆大小来分配标记位图, gc用
     allocMarkBits();
 
     // zeng: 初始化互斥量用来操作堆
@@ -188,24 +191,36 @@ extern void scanThreads();
 
 void markChildren(Object *ob);
 
+// zeng: 有用的对象做标记
 static void doMark(Thread *self) {
     char *ptr;
     int i, j;
 
+    // zeng: 标记位图所有位置0
     clearMarkBits();
 
+    // zeng: OutOfMemoryError 对象肯定有用
     if (oom) MARK(oom);
+
+
+    // zeng: 所有class对象都标记
     markClasses();
+    // zeng: 所有和constant_pool有关的String对象 都做标记
     markInternedStrings();
+    // zeng: TODO
     markJNIGlobalRefs();
+    // zeng: 扫描 本地变量数组 和 操作数栈, 找到对象地址 就做标记
     scanThreads();
 
     /* Grab the run and has finalizer list locks - some thread may
        be inside a suspension-blocked region changing these lists.
        Grabbing ensures any thread has left - they'll self-suspend */
 
+    // zeng: TODO
     lockVMLock(has_fnlzr_lock, self);
     unlockVMLock(has_fnlzr_lock, self);
+
+    // zeng: run_finaliser_list操作 上锁
     lockVMWaitLock(run_fnlzr_lock, self);
 
     /* Mark any objects waiting to be finalized - they were found to
@@ -213,12 +228,14 @@ static void doMark(Thread *self) {
        them yet - we must mark them as they, and all objects they ref,
        cannot be deleted until the finalizer is ran... */
 
-    if (run_finaliser_end > run_finaliser_start)
+    // zeng: run_finaliser_end是上次gc确定的等待执行finalize但是还没执行finalize方法的对象 也暂时不能回收 所以这里加上标记
+    if (run_finaliser_end > run_finaliser_start)    // zeng: 圆环上结束位置 大于 开始位置
         for (i = run_finaliser_start; i < run_finaliser_end; i++)
             MARK(run_finaliser_list[i]);
-    else {
+    else {  // zeng: 圆环上结束位置 小于等于 开始位置, 列表被原点(run_finaliser_size所在的位置)切成两块
         for (i = run_finaliser_start; i < run_finaliser_size; i++)
             MARK(run_finaliser_list[i]);
+
         for (i = 0; i < run_finaliser_end; i++)
             MARK(run_finaliser_list[i]);
     }
@@ -227,23 +244,24 @@ static void doMark(Thread *self) {
        mark all marked objects - once the heap has been scanned all
        reachable objects should be marked */
 
+    // zeng: 上面标记的对象都是ROOTS, ROOTS中这些对象的字段中可能又会引用其他对象, 其他对象引用其他对象, 引用链条上的所有对象都是有用的, 都要标记
     for (ptr = heapbase; ptr < heaplimit;) {
         unsigned int hdr = HEADER(ptr);
-        int size = HDR_SIZE(hdr);
+        int size = HDR_SIZE(hdr);     // chunk -> header, 即chunk大小
 
 #ifdef DEBUG
         printf("Block @0x%x size %d alloced %d\n", ptr, size, HDR_ALLOCED(hdr));
 #endif
 
-        if (HDR_ALLOCED(hdr)) {
-            Object *ob = (Object *) (ptr + HEADER_SIZE);
+        if (HDR_ALLOCED(hdr)) { // zeng: 是否是个已经分配的chunk
+            Object *ob = (Object *) (ptr + HEADER_SIZE);    // zeng: 对象地址
 
-            if (IS_MARKED(ob))
-                markChildren(ob);
+            if (IS_MARKED(ob))  // zeng: 标记过的对象 (ROOTS)
+                markChildren(ob);   // zeng: 这些对象的引用也要标记
         }
 
         /* Skip to next block */
-        ptr += size;
+        ptr += size;    // zeng: 下个chunk
     }
 
     /* Now all reachable objects are marked.  All other objects are garbage.
@@ -254,36 +272,42 @@ static void doMark(Thread *self) {
        object, as objects are only added to the has_finaliser list on
        creation */
 
+    // zeng: 有finalize方法的对象(has_finaliser list 中, 对象只在创建时才会判断要不要加入这个list, 所以对应地最多只能加入run_finaliser_list一次), 如果没有标记, 说明它没有被引用, 但是它还有一次执行finalize的机会, 所以会将其放入run_finaliser_list列表中, 并标记对象(递归标记)
     for (i = 0, j = 0; i < has_finaliser_count; i++) {
-        Object *ob = has_finaliser_list[i];
+        Object *ob = has_finaliser_list[i]; // zeng: 在has_finaliser_list中
 
-        if (!IS_MARKED(ob)) {
-            markChildren(ob);
-            if (run_finaliser_start == run_finaliser_end) {
-                run_finaliser_start = 0;
-                run_finaliser_end = run_finaliser_size;
-                run_finaliser_size += LIST_INCREMENT;
-                run_finaliser_list = (Object **) realloc(run_finaliser_list,
-                                                         run_finaliser_size * sizeof(Object *));
+        if (!IS_MARKED(ob)) {   // zeng: ROOTS递归标记时没被标记
+
+            markChildren(ob);   // zeng: 递归标记
+
+            if (run_finaliser_start == run_finaliser_end) { // zeng: 圆环 开始位置 等于 结束位置 说明圆环上的文职分配完了
+                run_finaliser_start = 0;    // zeng: 数组开始下标
+                run_finaliser_end = run_finaliser_size; // zeng: 数组结束下标
+                run_finaliser_size += LIST_INCREMENT;   // zeng: 每次多分配1000个元素的空间
+                run_finaliser_list = (Object **) realloc(run_finaliser_list,run_finaliser_size * sizeof(Object *)); // zeng: 根据新的数组大小 realloc
             }
-            run_finaliser_end = run_finaliser_end % run_finaliser_size;
-            run_finaliser_list[run_finaliser_end++] = ob;
+
+            run_finaliser_end = run_finaliser_end % run_finaliser_size; // zeng: 溢出数值范围从0开始再算
+            run_finaliser_list[run_finaliser_end++] = ob;   // zeng: 对象地址存入run_finaliser_list中
+
         } else {
-            has_finaliser_list[j++] = ob;
+            has_finaliser_list[j++] = ob;   // zeng: 没有加入run_finaliser_end才会留在has_finaliser_list中
         }
     }
 
     /* After scanning, j holds how many finalizers are left */
 
     if (j != has_finaliser_count) {
-        has_finaliser_count = j;
+        has_finaliser_count = j;    // zeng: 没有加入run_finaliser_end才会留在has_finaliser_list中
 
         /* Extra finalizers to be ran, so signal the finalizer thread
            in case it needs waking up.  It won't run until it's
            resumed */
 
-        notifyVMWaitLock(run_fnlzr_lock, self);
+        notifyVMWaitLock(run_fnlzr_lock, self); // zeng: TODO
     }
+
+    // zeng: run_finaliser_list操作 解锁
     unlockVMWaitLock(run_fnlzr_lock, self);
 }
 
@@ -439,6 +463,7 @@ static int doSweep(Thread *self) {
 
 static Thread *runningFinalizers = NULL;
 
+// zeng: TODO
 static int runFinalizers() {
     Thread *self = threadSelf();
     int ret = FALSE;
@@ -762,6 +787,7 @@ void *gcMalloc(int len) {
 	    - globals
 */
 
+// zeng: Class 中 FieldBlock -> static_value 可能为 对象引用, 也要标记
 void markClassStatics(Class *class) {
     ClassBlock *cb = CLASS_CB(class);
     FieldBlock *fb = cb->fields;
@@ -770,28 +796,34 @@ void markClassStatics(Class *class) {
     TRACE_GC(("Marking static fields for class %s\n", cb->name));
 
     for (i = 0; i < cb->fields_count; i++, fb++)
-        if ((fb->access_flags & ACC_STATIC) &&
-            ((*fb->type == 'L') || (*fb->type == '['))) {
+        if ((fb->access_flags & ACC_STATIC) && ((*fb->type == 'L') || (*fb->type == '['))) {
+
             Object *ob = (Object *) fb->static_value;
             TRACE_GC(("Field %s %s\n", fb->name, fb->type));
             TRACE_GC(("Object @0x%x is valid %d\n", ob, IS_OBJECT(ob)));
             if (IS_OBJECT(ob) && !IS_MARKED(ob))
-                markChildren(ob);
+                markChildren(ob);   // zeng: 递归标记
+
         }
 }
 
+// zeng: 所有线程下 所有 栈帧 的 本地变量数组 和 操作数栈 中 持有 对象地址, 说明这个对象有用, 要标记
 void scanThread(Thread *thread) {
-    ExecEnv *ee = thread->ee;
-    Frame *frame = ee->last_frame;
+    ExecEnv *ee = thread->ee;   // zeng: 这个线程的执行上下文
+    Frame *frame = ee->last_frame;  // zeng: 这个线程的当前栈帧
+
     u4 *end, *slot;
 
     TRACE_GC(("Scanning stacks for thread 0x%x\n", thread));
 
     MARK(ee->thread);
 
+    // zeng: TODO
     slot = (u4 *) getStackTop(thread);
+    // zeng: TODO
     end = (u4 *) getStackBase(thread);
 
+    // zeng: TODO
     for (; slot < end; slot++)
         if (IS_OBJECT(*slot)) {
             Object *ob = (Object *) *slot;
@@ -799,28 +831,35 @@ void scanThread(Thread *thread) {
             MARK(ob);
         }
 
+    // zeng: ostack结束地址
     slot = frame->ostack + frame->mb->max_stack;
 
-    while (frame->prev != NULL) {
+    while (frame->prev != NULL) {   // zeng: 不是最顶层栈帧时
         if (frame->mb != NULL) {
             TRACE_GC(("Scanning %s.%s\n", CLASS_CB(frame->mb->class)->name, frame->mb->name));
             TRACE_GC(("lvars @0x%x ostack @0x%x\n", frame->lvars, frame->ostack));
         }
 
+        // zeng: ostack开始地址
         end = frame->ostack;
 
+        // zeng: 操作数栈中存在的对象地址 做标记
         for (; slot >= end; slot--)
             if (IS_OBJECT(*slot)) {
                 Object *ob = (Object *) *slot;
                 TRACE_GC(("Found Java stack ref @0x%x object ref is 0x%x\n", slot, ob));
-                MARK(ob);
+                MARK(ob);   // zeng: 标记对象   对象中字段引用的对象没标记? 这里只用来标记ROOTS, 后面会遍历ROOTS, 找到每条引用链, 标记链上的所有对象
             }
 
+        // zeng: 得到本栈帧的本地变量表结束地址 也就是下一次循环 [end, slot] 区间包括 本栈帧 的本地向量数组 和 前一个栈帧的 操作数栈
         slot -= sizeof(Frame) / 4;
+
+        // zeng: 前一个栈帧
         frame = frame->prev;
     }
 }
 
+// zeng: 标记class对象
 void markClass(Class *class) {
     MARK(class);
 }
@@ -829,38 +868,44 @@ void markObject(Object *object) {
     MARK(object);
 }
 
+// zeng: 递归标记引用对象
 void markChildren(Object *ob) {
 
-    MARK(ob);
+    MARK(ob);   // zeng: 标记自身
 
-    if (ob->class == NULL)
+    if (ob->class == NULL)  // zeng: 说明不是个对象
         return;
 
-    if (IS_CLASS(ob)) {
+    if (IS_CLASS(ob)) { // zeng: 是Class对象
         TRACE_GC(("Found class object @0x%x name is %s\n", ob, CLASS_CB(ob)->name));
         markClassStatics((Class *) ob);
-    } else {
+    } else {    // zeng: 非Class对象
         Class *class = ob->class;
         ClassBlock *cb = CLASS_CB(class);
-        u4 *body = INST_DATA(ob);
+        u4 *body = INST_DATA(ob);   // zeng: 对象内容体
 
-        if (cb->name[0] == '[') {
-            if ((cb->name[1] == 'L') || (cb->name[1] == '[')) {
-                int len = body[0];
+        if (cb->name[0] == '[') {   // zeng: 是数组对象
+
+            if ((cb->name[1] == 'L') || (cb->name[1] == '[')) { // zeng: 元素是 对象 或者 数组
+                int len = body[0];  // zeng:数组长度
                 int i;
                 TRACE_GC(("Scanning Array object @0x%x class is %s len is %d\n", ob, cb->name, len));
 
                 for (i = 1; i <= len; i++) {
-                    Object *ob = (Object *) body[i];
+                    Object *ob = (Object *) body[i];    // zeng: 元素 为 对象地址
+
                     TRACE_GC(("Object at index %d is @0x%x is valid %d\n", i - 1, ob, IS_OBJECT(ob)));
 
-                    if (IS_OBJECT(ob) && !IS_MARKED(ob))
-                        markChildren(ob);
+                    if (IS_OBJECT(ob) && !IS_MARKED(ob))    // zeng: 是对象 且 还没 标记 过
+                        markChildren(ob);   // zeng: 递归标记
                 }
+
             } else {
                 TRACE_GC(("Array object @0x%x class is %s  - Not Scanning...\n", ob, cb->name));
             }
-        } else {
+
+        } else {    // zeng: 非数组对象
+
             FieldBlock *fb;
             int i;
 
@@ -870,25 +915,31 @@ void markChildren(Object *ob) {
                and mark all object refs */
 
             for (;;) {
+                // zeng: 本类的所有字段
                 fb = cb->fields;
 
                 TRACE_GC(("scanning fields of class %s\n", cb->name));
 
                 for (i = 0; i < cb->fields_count; i++, fb++)
-                    if (!(fb->access_flags & ACC_STATIC) &&
-                        ((*fb->type == 'L') || (*fb->type == '['))) {
-                        Object *ob = (Object *) body[fb->offset];
+                    if (!(fb->access_flags & ACC_STATIC) && ((*fb->type == 'L') || (*fb->type == '['))) {   // zeng: 非static字段(static字段在前面判断为class对象时遍历) 且字段为对象引用或者数组引用时
+                        Object *ob = (Object *) body[fb->offset];   // zeng: 字段的值
                         TRACE_GC(("Field %s %s is an Object ref\n", fb->name, fb->type));
                         TRACE_GC(("Object @0x%x is valid %d\n", ob, IS_OBJECT(ob)));
 
-                        if (IS_OBJECT(ob) && !IS_MARKED(ob))
-                            markChildren(ob);
+                        if (IS_OBJECT(ob) && !IS_MARKED(ob))    // zeng: 值为对象引用 且为 标记
+                            markChildren(ob);   // zeng: 递归标记
                     }
+
+                // zeng: 祖先类的字段也要遍历
                 class = cb->super;
+
                 if (class == NULL)
                     break;
+
+                // zeng: 超类的ClassBlock
                 cb = CLASS_CB(class);
             }
+
         }
     }
 }
@@ -912,6 +963,7 @@ int maxHeapMem() {
  * calls gc if the system's idle and the heap's
  * changed */
 
+// zeng: TODO
 void asyncGCThreadLoop(Thread *self) {
     for (;;) {
         threadSleep(self, 1000, 0);
@@ -924,6 +976,7 @@ void asyncGCThreadLoop(Thread *self) {
  * of new finalizers (by the thread doing gc)
  * and then runs them */
 
+// zeng: TODO
 void finalizerThreadLoop(Thread *self) {
     disableSuspend0(self, &self);
 
@@ -931,32 +984,36 @@ void finalizerThreadLoop(Thread *self) {
         lockVMWaitLock(run_fnlzr_lock, self);
         waitVMWaitLock(run_fnlzr_lock, self);
         unlockVMWaitLock(run_fnlzr_lock, self);
+
         runFinalizers();
     }
 }
 
+// zeng: 初始化gc
 void initialiseGC(int noasyncgc) {
     /* Pre-allocate an OutOfMemoryError exception object - we throw it
      * when we're really low on heap space, and can create FA... */
 
     MethodBlock *init;
+    // zeng: 加载 初始化OutOfMemoryError类
     Class *oom_clazz = findSystemClass("java/lang/OutOfMemoryError");
     if (exceptionOccured()) {
         printException();
         exit(1);
     }
 
+    // zeng:分配OutOfMemoryError对象 并调用初始化方法
     init = lookupMethod(oom_clazz, "<init>", "(Ljava/lang/String;)V");
     oom = allocObject(oom_clazz);
     executeMethod(oom, init, NULL);
 
-    // zeng: TODO
+    // zeng: 启动一个线程执行finalize列表
     /* Create and start VM threads for the async gc and finalizer */
     createVMThread("Finalizer", finalizerThreadLoop);
 
-    // zeng: TODO
+    // zeng: noasyncgc: 不开启异步gc
     if (!noasyncgc)
-        createVMThread("Async GC", asyncGCThreadLoop);
+        createVMThread("Async GC", asyncGCThreadLoop);  // zeng: 启动一个线程进行周期gc
 }
 
 /* Object allocation routines */

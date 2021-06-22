@@ -26,7 +26,7 @@
 #define HASH(ptr) stringHash(ptr)
 #define COMPARE(ptr1, ptr2, hash1, hash2) (ptr1 == ptr2) || \
                   ((hash1 == hash2) && stringComp(ptr1, ptr2))
-#define ITERATE(ptr)  markObject(ptr)
+#define ITERATE(ptr)  markObject(ptr)   // zeng: 遍历hash表时每个元素都调用markObject对象
 #define PREPARE(ptr) ptr
 #define SCAVENGE(ptr) FALSE
 #define FOUND(ptr)
@@ -109,7 +109,8 @@ Object *findInternedString(Object *string) {
 
     return interned;
 }
- 
+
+// zeng: String对象hash表中所有对象(所有和constant_pool有关的String对象)都做标记
 void markInternedStrings() {
     hashIterate(hash_table);
 }

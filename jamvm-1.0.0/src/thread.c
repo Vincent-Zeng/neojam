@@ -166,10 +166,12 @@ got_lock:
     }
 }
 
+// zeng: TODO
 void *getStackTop(Thread *thread) {
     return thread->stack_top;
 }
 
+// zeng: TODO
 void *getStackBase(Thread *thread) {
     return thread->stack_base;
 }
@@ -594,6 +596,7 @@ static void initialiseSignals() {
 
 extern void scanThread(Thread *thread);
 
+// zeng: 每个线程都调用scanThread方法
 void scanThreads() {
     Thread *thread;
 

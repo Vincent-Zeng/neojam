@@ -155,6 +155,7 @@ static void delJNIGref(Object *ref) {
 
 extern void markObject(Object *obj);
 
+// zeng: TODO
 void markJNIGlobalRefs() {
     Thread *self = threadSelf();
     int i;
