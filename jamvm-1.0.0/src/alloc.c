@@ -334,17 +334,17 @@ static int doSweep(Thread *self) {
 
     for (ptr = heapbase; ptr < heaplimit;) {    // zeng: 遍历堆里所有对象
         unsigned int hdr = HEADER(ptr); // zeng: Chunk -> header
-        int size = HDR_SIZE(hdr);   // zeng: Chunk size
+        int size = HDR_SIZE(hdr);   // zeng: chunk size
 
-        if (HDR_ALLOCED(hdr)) { // zeng: 是否分配出去
+        if (HDR_ALLOCED(hdr)) { // zeng: 是分配出去的chunk
             Object *ob = (Object *) (ptr + HEADER_SIZE);    // zeng: 对象开始地址
 
             if (IS_MARKED(ob))  // zeng: 只回收没有标记的对象
-                goto marked;
+                goto marked;    // zeng: 跳转
 
             if (ob->lock & 1) { // zeng: 对象是否上锁
                 printf("freeing ob with fat lock...\n");
-                exit(0);    // zeng: 上锁的对象被标记是有问题的
+                exit(0);    // zeng: 上锁的对象没被标记是有问题的
             }
 
             freed += size;  // zeng:  被回收的字节
@@ -357,10 +357,10 @@ static int doSweep(Thread *self) {
 
         // zeng: 是空闲的chunk 加入新的freelist中
         /* Add chunk onto the freelist */
-        last->next = (Chunk *) ptr;
+        last->next = (Chunk *) ptr; // zeng: 说明last链表中第一个node不是个有效chunk next才是
         last = last->next;
 
-        // zeng: chunk标志位 置0
+        // zeng: chunk标志位 置0 表示这个chunk没有被分配, 但是并没有将内存每个bit都置0
         /* Clear the alloc and flc bits in the header */
         last->header &= ~(ALLOC_BIT | FLC_BIT);
 
@@ -373,7 +373,7 @@ static int doSweep(Thread *self) {
             ptr += size;
 
             if (ptr >= heaplimit)   // zeng: 遍历完heap区了
-                goto out_last_free;
+                goto out_last_free; // zeng: 跳转
 
             hdr = HEADER(ptr);
             size = HDR_SIZE(hdr);
@@ -381,7 +381,7 @@ static int doSweep(Thread *self) {
                 Object *ob = (Object *) (ptr + HEADER_SIZE);
 
                 if (IS_MARKED(ob))  // zeng: 有标记的对象
-                    break;
+                    break;  // zeng: 退出循环
 
                 if (ob->lock & 1) {
                     printf("freeing ob with fat lock...\n");
@@ -397,7 +397,7 @@ static int doSweep(Thread *self) {
             } else
                     TRACE_GC(("FREE: unalloced block @ 0x%x size %d - merging onto block @ 0x%x\n", ptr, size, last));
 
-            last->header += size;   // zeng: 扩大上一个chunk大小
+            last->header += size;   // zeng: 扩大上一个chunk的大小
         }
 
         /* Scanned to next marked object see if it's
@@ -441,7 +441,7 @@ static int doSweep(Thread *self) {
 
     /* Reset next allocation block to beginning of list -
        this leads to a search - use largest instead? */
-    chunkpp = &freelist;    // zeng: 新的空闲chunk列表
+    chunkpp = &freelist;    // zeng: 下次查找空闲chunk时从新的freelist重新开始
 
 #ifdef DEBUG
     {
@@ -616,22 +616,22 @@ int gc1() {
     enableSuspend(self);
 }
 
-// zeng: TODO
-void expandHeap(int min) {
+// zeng: 扩充java heap大小
+void expandHeap(int min) {  // zeng: min 最少需要扩大的字节数
     Chunk *chunk, *new;
     int delta;
 
     if (verbosegc)
         printf("<GC: Expanding heap - minimum needed is %d>\n", min);
 
-    delta = (heaplimit - heapbase) / 2;
-    delta = delta < min ? min : delta;
+    delta = (heaplimit - heapbase) / 2; // zeng: 之前java heap 的 1/2
+    delta = delta < min ? min : delta;  // zeng: min(delta, min)
 
-    if ((heaplimit + delta) > heapmax)
-        delta = heapmax - heaplimit;
+    if ((heaplimit + delta) > heapmax)  // zeng: 大于最大可分配的java heap字节数
+        delta = heapmax - heaplimit;    // zeng: 扩大到 最大可分配的java heap字节数
 
     /* Ensure new region is multiple of object grain in size */
-
+    // zeng: 对齐
     delta = (delta & ~(OBJECT_GRAIN - 1));
 
     if (verbosegc)
@@ -640,19 +640,23 @@ void expandHeap(int min) {
     /* The freelist is in address order - find the last
        free chunk and add the new area to the end.  */
 
+    // zeng: freelist链表最后一个chunk
     for (chunk = freelist; chunk->next != NULL; chunk = chunk->next);
 
-    new = (Chunk *) heaplimit;
-    new->header = delta;
-    new->next = 0;
+    // zeng: 新分配的空间当成一个chunk
 
-    chunk->next = new;
-    heaplimit += delta;
-    heapfree += delta;
+    new = (Chunk *) heaplimit;  // zeng: chunk地址
+    new->header = delta;    // zeng:  chunk大小
+    new->next = 0;  // zeng: 这是最后一个chunk
+
+    chunk->next = new;  // zeng: 原先最后一个chunk 变成倒数第2个chunk
+
+    heaplimit += delta; // zeng: 更新当前heap大小
+    heapfree += delta;  // zeng: 更新当前空闲heap大小
 
     /* The heap has increased in size - need to reallocate
        the mark bits to cover new area */
-
+    // zeng: 重新分配标记位图
     free(markBits);
     allocMarkBits();
 }
@@ -712,50 +716,51 @@ void *gcMalloc(int len) {
 
 #ifdef TRACEALLOC
             tries++;    // zeng: 遍历经过1个chunk 就+1
-#endi
+#endif
         }
 
         if (verbosegc)
             printf("<GC: Alloc attempt for %d bytes failed (state %d).>\n", n, state);
 
-        switch (state) {
+        switch (state) {    // zeng: 进行一次gc 看能不能有合适大小的chunk
 
             case 0: // zeng: 当前chunk list链表中分配不到需要的内存
                 largest = gc0();    // zeng: 扫描回收无用对象的空间
                 if (n <= largest)   // zeng: 回收之后最大的chunk大于等于n
-                    break;
+                    break;  // zeng: 跳出switch 开始下次的for循环 遍历chunkpp查找合适的chunk分配
 
                 // zeng: 回收之后最大的chunk还小于n
                 state = 1;
+                // zeng: 没有break 继续执行 case 1
 
-            case 1: {
+            case 1: {   // zeng: 先执行run_finaliser_list 以使run_finaliser_list中的对象都不需要再被标记 再执行gc 看能不能有合适大小的chunk分配
                 int res;
 
                 unlockVMLock(heap_lock, self);  // zeng: 释放锁
 
-                res = runFinalizers();  // zeng: 遍历run_fnlzr_lock执行
+                res = runFinalizers();  // zeng: 遍历run_finaliser_list执行
 
                 lockVMLock(heap_lock, self);    // zeng: heap操作 锁
 
                 if (state == 1) {
-                    if (res) {  // zeng: 有对象的finalize被执行
+                    if (res) {  // zeng: 存在 finalize被执行的对象, 才有可能比上次gc回收更多的对象
                         largest = gc0();    // zeng: 再进行一次gc
                         if (n <= largest) { // zeng: 回收之后最大的chunk大于等于n
                             state = 0;
-                            break;
+                            break;  // zeng: 跳出switch 开始下次的for循环 遍历chunkpp查找合适的chunk分配
                         }
                     }
 
                     // zeng: 回收之后最大的chunk还小于n
                     state = 2;
                 }
-                break;
+                break;  // zeng: 跳出switch 开始下次的for循环 遍历chunkpp查找合适的chunk分配 如果还没找到合适的chunk 就执行case 2
 
-                case 2:
+                case 2: // zeng: 这里case 2 在 case 1程序块 里是为什么 , 和不在这个语句块好像也没什么分别 TODO
                     if (heaplimit < heapmax) {  // zeng: java heap 还允许扩大
-                        expandHeap(n);  // zeng: TODO
+                        expandHeap(n);  // zeng: 扩大java heap大小
                         state = 0;
-                        break;
+                        break;   // zeng: 跳出switch 开始下次的for循环 遍历chunkpp查找合适的chunk分配(下次遍历时*chunkpp为NULL, 还是分配不到, 所以还要先经过一次gc0来使得chunkpp从freelist第一个node重新开始)
                     } else {
                         if (verbosegc)
                             printf("<GC: Stack at maximum already - completely out of heap space>\n");
@@ -1197,6 +1202,7 @@ Object *allocTypeArray(int type, int size) {
     return allocArray(class, size, el_size);
 }
 
+// zeng: 分配多维数组
 Object *allocMultiArray(Class *array_class, int dim, int *count) {
 
     int i;
