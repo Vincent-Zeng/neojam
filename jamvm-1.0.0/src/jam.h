@@ -503,11 +503,11 @@ extern void *executeMethodArgs(Object *ob, Class *class, MethodBlock *mb, ...);
 extern void *executeMethodVaList(Object *ob, Class *class, MethodBlock *mb, va_list args);
 extern void *executeMethodList(Object *ob, Class *class, MethodBlock *mb, u8 *args);
 
-// zeng: TODO
+// zeng: 执行实例方法
 #define executeMethod(ob, mb, args...) \
     executeMethodArgs(ob, ob->class, mb, ##args)
 
-// zeng: TODO
+// zeng: 执行静态方法
 #define executeStaticMethod(clazz, mb, args...) \
     executeMethodArgs(NULL, clazz, mb, ##args)
 

@@ -746,7 +746,7 @@ Class *initClass(Class *class) {
     if ((mb = findMethod(class, "<clinit>", "()V")) != NULL)
         executeStaticMethod(class, mb);
 
-    if (excep = exceptionOccured()) {   // zeng: TODO
+    if (excep = exceptionOccured()) {   // zeng: 有异常抛出
         Class *error, *eiie;
         Object *ob;
 

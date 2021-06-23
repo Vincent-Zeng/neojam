@@ -38,7 +38,7 @@
 
 #define JA_SINGLE(args, sp)  *sp++ = *(u4*)args; args++
 
-// zeng: TODO
+// zeng: 解释执行java方法
 void *executeMethodArgs(Object *ob, Class *class, MethodBlock *mb, ...) {
     va_list jargs;
     void *ret;
@@ -52,6 +52,7 @@ void *executeMethodArgs(Object *ob, Class *class, MethodBlock *mb, ...) {
     return ret;
 }
 
+// zeng: 解释执行java方法
 void *executeMethodVaList(Object *ob, Class *class, MethodBlock *mb, va_list jargs) {
     ClassBlock *cb = CLASS_CB(class);
     char *sig = mb->type;

@@ -27,16 +27,16 @@
     Frame *dummy = (Frame *)(last->ostack+last->mb->max_stack); \   // zeng: 上一个frame结构的ostack起始地址 + ostack操作数栈深度(每个操作数占u4,和指针大小一样,所以可以这样加), 即操作栈结束地址, 也即上一个栈帧结束地址 结束之后这里分配了一个名为dummy的frame结构体 用来判断方法是否`top of this Java invocation`
     Frame *new_frame;                                           \
                                                                 \
-    sp = (u4*)(dummy+1);				                    	\   // zeng: dummy结构提接下来是返回值地址的地址
-    ret = sp;							                        \
+    sp = (u4*)(dummy+1);				                    	\   // zeng: dummy结构体接下来是dummy栈帧的ostack(只有一个格子)的地址 这个地址也可以作为下一个栈帧的本地向量数组第一个格子
+    ret = sp;							                        \   // zeng: 返回值存在ostack这个格子里
     new_frame = (Frame *)(sp + mb->max_locals);                 \   // zeng: 返回值地址接下来是本地变量表地址 本地变量数组地址接下来就是新的栈帧地址
                                                                 \
     dummy->mb = NULL;                                           \
-    dummy->ostack = sp;                                         \   // zeng: dummy ostack地址在dummy结构体之后 TODO 有什么用
+    dummy->ostack = sp;                                         \   // zeng: dummy ostack地址在dummy结构体之后
     dummy->prev = last;                                         \   // zeng: dummy frame结构体指向前一个stack frame结构体
                                                                 \
     new_frame->mb = mb;                                         \   // zeng: 设置frame结构体中的mb指向方法的MethodBlock
-    new_frame->lvars = sp;                                      \   // zeng: TODO 本地变量表地址 为何是 返回值地址的地址? 是因为本地变量数组可以暂时使用这个格子?
+    new_frame->lvars = sp;                                      \   // zeng: 本地变量数组 第一个格子是dummy栈帧的ostack的格子
     new_frame->ostack = (u4 *)(new_frame + 1);                  \   // zeng: 新的frame结构体之后是新的ostack地址
                                                                 \
     new_frame->prev = dummy;                                    \   // zeng: 新的frame结构体指向dummy结构体
