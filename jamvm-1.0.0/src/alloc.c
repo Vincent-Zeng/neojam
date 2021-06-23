@@ -463,24 +463,29 @@ static int doSweep(Thread *self) {
 
 static Thread *runningFinalizers = NULL;
 
-// zeng: TODO
+// zeng: 遍历run_fnlzr_lock执行
 static int runFinalizers() {
     Thread *self = threadSelf();
     int ret = FALSE;
 
+    // zeng: run_fnlzr_list 操作锁
     lockVMWaitLock(run_fnlzr_lock, self);
 
+    // zeng: 只有一个线程在执行 有必要吗
     if (runningFinalizers == self)
         goto out;
 
+    // zeng: 有必要吗
     while (runningFinalizers) {
         ret = TRUE;
         waitVMWaitLock(run_fnlzr_lock, self);
     }
 
+    // zeng: run_finaliser_list里没有元素了
     if ((run_finaliser_start == run_finaliser_size) && (run_finaliser_end == 0))
         goto out;
 
+    // zeng: 有必要吗
     runningFinalizers = self;
 
     TRACE_FNLZ(("run_finaliser_start %d\n", run_finaliser_start));
@@ -492,14 +497,20 @@ static int runFinalizers() {
         printf("<Running %d finalizers>\n", diff > 0 ? diff : diff + run_finaliser_size);
     }
 
+    // zeng: 遍历run_finaliser_list执行finalize方法
     do {
         Object *ob;
+
+        // zeng: 取run_finaliser_list中的对象
         run_finaliser_start %= run_finaliser_size;
         ob = run_finaliser_list[run_finaliser_start];
 
+        // zeng: 释放锁
         unlockVMWaitLock(run_fnlzr_lock, self);
+        // zeng: 允许被暂停
         enableSuspend(self);
 
+        // zeng: 执行finalize方法
         /* Run the finalizer method */
         executeMethod(ob, CLASS_CB(ob->class)->finalizer);
 
@@ -507,23 +518,30 @@ static int runFinalizers() {
          * else interesting on stack, so use previous
          * stack top. */
 
+        // zeng: 不允许被暂停
         disableSuspend0(self, getStackTop(self));
+        // zeng: 上锁
         lockVMWaitLock(run_fnlzr_lock, self);
 
         /* Clear any exceptions - exceptions thrown in finalizers are
            silently ignored */
-
+        // zeng: finalize方法抛出的异常忽略
         clearException();
     } while (++run_finaliser_start != run_finaliser_end);
 
+    // zeng: 遍历完重置圆环状态
     run_finaliser_start = run_finaliser_size;
     run_finaliser_end = 0;
     runningFinalizers = NULL;
 
     ret = TRUE;
+
     out:
+    // zeng: TODO
     notifyVMWaitLock(run_fnlzr_lock, self);
+    // zeng: 释放锁
     unlockVMWaitLock(run_fnlzr_lock, self);
+
     return ret;
 }
 
@@ -976,15 +994,18 @@ void asyncGCThreadLoop(Thread *self) {
  * of new finalizers (by the thread doing gc)
  * and then runs them */
 
-// zeng: TODO
+// zeng: 遍历run_fnlzr_lock执行 无限循环
 void finalizerThreadLoop(Thread *self) {
+    // zeng:不允许被暂停
     disableSuspend0(self, &self);
 
     for (;;) {
+        // zeng: TODO
         lockVMWaitLock(run_fnlzr_lock, self);
         waitVMWaitLock(run_fnlzr_lock, self);
         unlockVMWaitLock(run_fnlzr_lock, self);
 
+        // zeng: 遍历run_fnlzr_lock执行
         runFinalizers();
     }
 }
@@ -1017,23 +1038,23 @@ void initialiseGC(int noasyncgc) {
 }
 
 /* Object allocation routines */
-// zeng: TODO
+// zeng: 将对象加入has_fnlzr_list
 #define ADD_FINALIZED_OBJECT(ob)                                                   \
 {                                                                                  \
     Thread *self;                                                                  \
-    disableSuspend(self = threadSelf());                                           \
-    lockVMLock(has_fnlzr_lock, self);                                              \
-    TRACE_FNLZ(("Object @0x%x type %s has a finalize method...\n",                 \
-                                      ob, CLASS_CB(ob->class)->name)); \
-    if(has_finaliser_count == has_finaliser_size) {                                \
-        has_finaliser_size += LIST_INCREMENT;                                      \
-        has_finaliser_list = (Object**)realloc(has_finaliser_list,                 \
+    disableSuspend(self = threadSelf());                                           \    // zeng: 不允许被暂停
+    lockVMLock(has_fnlzr_lock, self);                                              \    // zeng: has_fnlzr_list 操作锁
+    TRACE_FNLZ(("Object @0x%x type %s has a finalize method...\n",              \
+                                      ob, CLASS_CB(ob->class)->name));             \
+    if(has_finaliser_count == has_finaliser_size) {                                \    // zeng: has_finaliser_list 数组满了
+        has_finaliser_size += LIST_INCREMENT;                                      \    // zeng: 每次多分配1000
+        has_finaliser_list = (Object**)realloc(has_finaliser_list,                 \    // zeng: realloc
                                    has_finaliser_size*sizeof(Object*));\
     }                                                                              \
                                                                                    \
-    has_finaliser_list[has_finaliser_count++] = ob;                                \
-    unlockVMLock(has_fnlzr_lock, self);                                            \
-    enableSuspend(self);                                                           \
+    has_finaliser_list[has_finaliser_count++] = ob;                                \    // zeng: 加入数组
+    unlockVMLock(has_fnlzr_lock, self);                                            \    // zeng: 释放锁
+    enableSuspend(self);                                                           \    // zeng: 允许被暂停
 }
 
 // zeng: 分配 对象 空间
@@ -1049,7 +1070,7 @@ Object *allocObject(Class *class) {
         // zeng: object数据结构的class 指向 对象 对应的类
         ob->class = class;
 
-        // zeng: 如果类中有finalize方法
+        // zeng: 如果类中(包括祖先类)有finalize方法
         if (cb->finalizer != NULL) ADD_FINALIZED_OBJECT(ob);
 
         // zeng: 打印分配日志

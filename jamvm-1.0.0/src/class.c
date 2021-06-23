@@ -603,7 +603,7 @@ void linkClass(Class *class) {
         }
     }
 
-    // zeng: TODO 所有实例变量大小构成对象的个数(以u4为单位)?
+    // zeng: 所有实例变量大小构成对象的大小(以u4为单位)
     cb->object_size = offset;
 
     /* prepare methods */
@@ -619,7 +619,7 @@ void linkClass(Class *class) {
 
         if (mb->access_flags & ACC_STATIC)
             mb->args_count = count;
-        else    // zeng: TODO 非static方法 参数多了一个this?
+        else    // zeng: 非static方法 参数多了一个this
             mb->args_count = count + 1;
 
         // zeng: method所属class
