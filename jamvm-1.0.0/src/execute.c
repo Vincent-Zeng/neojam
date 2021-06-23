@@ -63,7 +63,7 @@ void *executeMethodVaList(Object *ob, Class *class, MethodBlock *mb, va_list jar
     void *ret;
     u4 *sp;
 
-    // zeng: 分配新的栈帧 sp是新栈帧中的本地变量数组的地址 TODO 其实是返回值地址的地址?
+    // zeng: 分配新的栈帧 sp是新栈帧中的本地变量数组的地址
     CREATE_TOP_FRAME(ee, class, mb, sp, ret);
 
     /* copy args onto stack */

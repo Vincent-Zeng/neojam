@@ -320,7 +320,7 @@ typedef struct line_no_table_entry {
 
 typedef struct class {
    unsigned int lock;
-   struct class *class; // zeng: TODO 这个指针做什么
+   struct class *class; // zeng: 指向这个类的class对象, class对象的class对象是自己
 } Class;
 
 typedef struct object {

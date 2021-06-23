@@ -109,7 +109,7 @@ Class *resolveClass(Class *class, int cp_index, int init) {
             // zeng: 获取全限定名
             classname = CP_UTF8(cp, name_idx);
 
-            // zeng: 通过class去加载另一个classname TODO
+            // zeng: 通过class去加载另一个classname
             resolved_class = findClassFromClass(classname, class);
 
             /* If we can't find the class an exception will already have
