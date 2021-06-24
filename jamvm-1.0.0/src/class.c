@@ -460,32 +460,33 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
     return class;
 }
 
-// zeng: TODO
-Class *
-createArrayClass(char *classname, Object *class_loader) {
+// zeng: 创建数组对象
+Class *createArrayClass(char *classname, Object *class_loader) {
     Class *class;
     ClassBlock *classblock;
     int len = strlen(classname);
 
+    // zeng: 分配class对象
     if ((class = allocClass()) == NULL)
         return NULL;
 
     classblock = CLASS_CB(class);
 
     /* Set all fields to zero */
+    // zeng: allocClass好像就已经置0了 这里好像没必要?
     memset(classblock, 0, sizeof(ClassBlock));
 
     classblock->name = strcpy((char *) malloc(len + 1), classname);
-    classblock->super_name = "java/lang/Object";
+    classblock->super_name = "java/lang/Object";    // zeng:数组类超类是Object
     classblock->super = findSystemClass("java/lang/Object");
-    classblock->method_table = CLASS_CB(classblock->super)->method_table;
+    classblock->method_table = CLASS_CB(classblock->super)->method_table;   // zeng: 超类的method_table兜底
 
-    classblock->interfaces_count = 2;
-    classblock->interfaces = (Class **) malloc(2 * sizeof(Class *));
-    classblock->interfaces[0] = findSystemClass("java/lang/Cloneable");
-    classblock->interfaces[1] = findSystemClass("java/io/Serializable");
+    classblock->interfaces_count = 2;   // zeng: 实现了两个接口类
+    classblock->interfaces = (Class **) malloc(2 * sizeof(Class *));    // zeng: 分配interfaces空间
+    classblock->interfaces[0] = findSystemClass("java/lang/Cloneable"); // zeng: 一个接口类是Cloneable
+    classblock->interfaces[1] = findSystemClass("java/io/Serializable");    // zeng: 一个接口类是Serializable
 
-    classblock->flags = CLASS_INTERNAL;
+    classblock->flags = CLASS_INTERNAL; // zeng: 是internal类
 
     // zeng: 如果不是基本类型
     if (classname[len - 1] == ';') {
@@ -497,28 +498,32 @@ createArrayClass(char *classname, Object *class_loader) {
         char *ptr;
         int dim;
 
+        // zeng: 数组维数
         /* Calculate dimension by counting the brackets */
         for (ptr = classname; *ptr == '['; ptr++);
         dim = ptr - classname;
 
+        // zeng: 取类名
         strcpy(buff, &classname[dim + 1]);
+
+        // zeng: 字符串以 `\0` 结尾
         buff[len - dim - 2] = '\0';
 
-        classblock->element_class = findClassFromClassLoader(buff, class_loader);
-        classblock->class_loader = CLASS_CB(classblock->element_class)->class_loader;
-        classblock->dim = dim;
+        classblock->element_class = findClassFromClassLoader(buff, class_loader);   // zeng: 元素的类的class对象
+        classblock->class_loader = CLASS_CB(classblock->element_class)->class_loader;   // zeng:  元素类的classloader 就是 数组类的classloader
+        classblock->dim = dim;  // zeng: 维数
     }
 
     if (java_lang_Class == NULL)
         java_lang_Class = loadSystemClass("java/lang/Class");
 
-    class->class = java_lang_Class;
+    class->class = java_lang_Class; // zeng: class对象就是class类的class对象
+
     return addClassToHash(class);
 }
 
 // zeng: TODO
-Class *
-createPrimClass(char *classname) {
+Class *createPrimClass(char *classname) {
     Class *class;
     ClassBlock *classblock;
     int i;
