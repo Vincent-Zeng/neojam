@@ -79,8 +79,8 @@ void *executeMethodVaList(Object *ob, Class *class, MethodBlock *mb, va_list jar
     if(mb->access_flags & ACC_SYNCHRONIZED)
         objectLock(ob ? ob : (Object*)mb->class);
 
-    if(mb->access_flags & ACC_NATIVE)   // zeng: 如果是本地方法 则调用native_invoker TODO
-        (*(u4 *(*)(Class*, MethodBlock*, u4*))mb->native_invoker)(class, mb, ret);
+    if(mb->access_flags & ACC_NATIVE)   // zeng: 如果是本地方法 则调用native_invoker
+        (*(u4 *(*)(Class*, MethodBlock*, u4*))mb->native_invoker)(class, mb, ret);  // zeng: 调用native_invoker, 返回值会被放在ret这个地址里
     else
         executeJava();  // zeng: 解释执行
 

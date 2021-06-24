@@ -98,6 +98,7 @@ unsigned char *findUtf8String(unsigned char *string) {
     return interned;
 }
 
+// zeng: 将字符串中 / 替换为 .
 unsigned char *slash2dots(unsigned char *utf8) {
     int len = utf8Len(utf8);
     unsigned char *conv = (unsigned char*)malloc(len+1);

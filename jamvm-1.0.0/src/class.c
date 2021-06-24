@@ -643,7 +643,7 @@ void linkClass(Class *class) {
                in at load time - as these values are used when creating frame
                set to appropriate values */
 
-            // zeng: TODO native方法也会用到本地变量表?
+            // zeng: native方法也会用到本地变量表?CREATE_TOP_FRAME中用到了max_locals.
             mb->max_locals = mb->args_count;
             mb->max_stack = 0;
         }

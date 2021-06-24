@@ -1821,13 +1821,14 @@ u4 *executeJava() {
                     objectLock(sync_ob);
                 }
 
-                if (new_mb->access_flags & ACC_NATIVE) {    // zeng: 是否是native方法 TODO
+                if (new_mb->access_flags & ACC_NATIVE) {    // zeng: 是否是native方法
+                    // zeng: 执行native_invoker, 返回操作数栈栈顶地址
                     ostack = (*(u4 *(*)(Class *, MethodBlock *, u4 *)) new_mb->native_invoker)(new_mb->class, new_mb, arg1);
 
                     if (sync_ob)
                         objectUnlock(sync_ob);
 
-                    ee->last_frame = frame;
+                    ee->last_frame = frame; // zeng: native_invoker已经执行完返回了, 恢复当前栈帧
 
                     if (exceptionOccured0(ee))
                         goto throwException;

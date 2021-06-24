@@ -35,21 +35,21 @@
 /* java.lang.VMObject */
 
 u4 *getClass(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *ob = (Object*)*ostack;
-    *ostack++ = (u4)ob->class;
+    Object *ob = (Object *) *ostack;
+    *ostack++ = (u4) ob->class;
     return ostack;
 }
 
 u4 *jamClone(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *ob = (Object*)*ostack;
-    *ostack++ = (u4)cloneObject(ob);
+    Object *ob = (Object *) *ostack;
+    *ostack++ = (u4) cloneObject(ob);
     return ostack;
 }
 
 /* static method wait(Ljava/lang/Object;JI)V */
 u4 *wait(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *obj = (Object *)ostack[0];
-    long long ms = *((long long *)&ostack[1]);
+    Object *obj = (Object *) ostack[0];
+    long long ms = *((long long *) &ostack[1]);
     int ns = ostack[3];
 
     objectWait(obj, ms, ns);
@@ -58,14 +58,14 @@ u4 *wait(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* static method notify(Ljava/lang/Object;)V */
 u4 *notify(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *obj = (Object *)*ostack;
+    Object *obj = (Object *) *ostack;
     objectNotify(obj);
     return ostack;
 }
 
 /* static method notifyAll(Ljava/lang/Object;)V */
 u4 *notifyAll(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *obj = (Object *)*ostack;
+    Object *obj = (Object *) *ostack;
     objectNotifyAll(obj);
     return ostack;
 }
@@ -74,34 +74,34 @@ u4 *notifyAll(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V */
 u4 *arraycopy(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *src = (Object *)ostack[0];
+    Object *src = (Object *) ostack[0];
     int start1 = ostack[1];
-    Object *dest = (Object *)ostack[2];
+    Object *dest = (Object *) ostack[2];
     int start2 = ostack[3];
     int length = ostack[4];
 
 
-    if((src == NULL) || (dest == NULL))
-	signalException("java/lang/NullPointerException", NULL);
+    if ((src == NULL) || (dest == NULL))
+        signalException("java/lang/NullPointerException", NULL);
     else {
         ClassBlock *scb = CLASS_CB(src->class);
         ClassBlock *dcb = CLASS_CB(dest->class);
-        int *sdata = INST_DATA(src);            
-        int *ddata = INST_DATA(dest);            
+        int *sdata = INST_DATA(src);
+        int *ddata = INST_DATA(dest);
 
-        if((scb->name[0] != '[') || (dcb->name[0] != '['))
-            goto storeExcep; 
+        if ((scb->name[0] != '[') || (dcb->name[0] != '['))
+            goto storeExcep;
 
-        if((start1 < 0) || (start2 < 0) || (length < 0)
-                        || ((start1 + length) > sdata[0]) || ((start2 + length) > ddata[0])) {
+        if ((start1 < 0) || (start2 < 0) || (length < 0)
+            || ((start1 + length) > sdata[0]) || ((start2 + length) > ddata[0])) {
             signalException("java/lang/ArrayIndexOutOfBoundsException", NULL);
             return ostack;
-	}
+        }
 
-        if(isInstanceOf(dest->class, src->class)) {
+        if (isInstanceOf(dest->class, src->class)) {
             int size;
 
-            switch(scb->name[1]) {
+            switch (scb->name[1]) {
                 case 'B':
                     size = 1;
                     break;
@@ -119,47 +119,47 @@ u4 *arraycopy(Class *class, MethodBlock *mb, u4 *ostack) {
                 case 'D':
                     size = 8;
                     break;
-            } 
+            }
 
-            memmove(((char *)&ddata[1]) + start2*size,
-                    ((char *)&sdata[1]) + start1*size,
-                    length*size);
-	} else {
-	    Object **sob, **dob;
-	    int i;
+            memmove(((char *) &ddata[1]) + start2 * size,
+                    ((char *) &sdata[1]) + start1 * size,
+                    length * size);
+        } else {
+            Object **sob, **dob;
+            int i;
 
-   	    if(!(((scb->name[1] == 'L') || (scb->name[1] == '[')) &&
-   	                  ((dcb->name[1] == 'L') || (dcb->name[1] == '['))))
-                goto storeExcep; 
-
-	    /* Not compatible array types, but elements may be compatible...
-	       e.g. src = [Ljava/lang/Object, dest = [Ljava/lang/String, but all src = Strings -
-	       check one by one...
-	     */
-	    
-	    if(scb->dim != dcb->dim)
+            if (!(((scb->name[1] == 'L') || (scb->name[1] == '[')) &&
+                  ((dcb->name[1] == 'L') || (dcb->name[1] == '['))))
                 goto storeExcep;
 
-	    sob = (Object**)&sdata[start1+1];
-	    dob = (Object**)&ddata[start2+1];
+            /* Not compatible array types, but elements may be compatible...
+               e.g. src = [Ljava/lang/Object, dest = [Ljava/lang/String, but all src = Strings -
+               check one by one...
+             */
 
-	    if(scb->dim == 1)
-	        for(i = 0; i < length; i++) {
-                    if(*sob && !isInstanceOf(dcb->element_class, (*sob)->class))
+            if (scb->dim != dcb->dim)
+                goto storeExcep;
+
+            sob = (Object **) &sdata[start1 + 1];
+            dob = (Object **) &ddata[start2 + 1];
+
+            if (scb->dim == 1)
+                for (i = 0; i < length; i++) {
+                    if (*sob && !isInstanceOf(dcb->element_class, (*sob)->class))
                         goto storeExcep;
                     *dob++ = *sob++;
-	        }
-	    else
-	        for(i = 0; i < length; i++) {
-                    if(*sob && !isInstanceOf(dcb->element_class, CLASS_CB((*sob)->class)->element_class))
+                }
+            else
+                for (i = 0; i < length; i++) {
+                    if (*sob && !isInstanceOf(dcb->element_class, CLASS_CB((*sob)->class)->element_class))
                         goto storeExcep;
                     *dob++ = *sob++;
-	        }
-	}
+                }
+        }
     }
     return ostack;
 
-storeExcep:
+    storeExcep:
     signalException("java/lang/ArrayStoreException", NULL);
     return ostack;
 }
@@ -171,29 +171,29 @@ u4 *identityHashCode(Class *class, MethodBlock *mb, u4 *ostack) {
 /* java.lang.Runtime */
 
 u4 *freeMemory(Class *class, MethodBlock *mb, u4 *ostack) {
-  u8 *temp = (u8 *)ostack;
-  *temp =  (u8) freeHeapMem();
-  temp++;
-  ostack = temp;
-  //*((u8*)ostack)++ = (u8) freeHeapMem();
+    u8 *temp = (u8 *) ostack;
+    *temp = (u8) freeHeapMem();
+    temp++;
+    ostack = temp;
+    //*((u8*)ostack)++ = (u8) freeHeapMem();
     return ostack;
 }
 
 u4 *totalMemory(Class *class, MethodBlock *mb, u4 *ostack) {
-  //*((u8*)ostack)++ = (u8) totalHeapMem();
-   u8 *temp = (u8 *)ostack;
-  *temp =  (u8) freeHeapMem();
-  temp++;
-  ostack = temp;
+    //*((u8*)ostack)++ = (u8) totalHeapMem();
+    u8 *temp = (u8 *) ostack;
+    *temp = (u8) freeHeapMem();
+    temp++;
+    ostack = temp;
     return ostack;
 }
 
 u4 *maxMemory(Class *class, MethodBlock *mb, u4 *ostack) {
-  //*((u8*)ostack)++ = (u8) maxHeapMem();
-     u8 *temp = (u8 *)ostack;
-  *temp =  (u8) freeHeapMem();
-  temp++;
-  ostack = temp;
+    //*((u8*)ostack)++ = (u8) maxHeapMem();
+    u8 *temp = (u8 *) ostack;
+    *temp = (u8) freeHeapMem();
+    temp++;
+    ostack = temp;
     return ostack;
 }
 
@@ -210,19 +210,20 @@ u4 *exitInternal(Class *class, MethodBlock *mb, u4 *ostack) {
     exit(0);
 }
 
+// zeng: TODO
 u4 *nativeLoad(Class *class, MethodBlock *mb, u4 *ostack) {
-    char *name = String2Cstr((Object*)ostack[1]);
+    char *name = String2Cstr((Object *) ostack[1]);
 
     ostack[0] = resolveDll(name);
     free(name);
 
-    return ostack+1;
+    return ostack + 1;
 }
 
 u4 *nativeGetLibname(Class *class, MethodBlock *mb, u4 *ostack) {
-    char *path = String2Cstr((Object*)ostack[0]);
-    char *name = String2Cstr((Object*)ostack[1]);
-    *ostack++ = (u4)Cstr2String(getDllName(path, name));
+    char *path = String2Cstr((Object *) ostack[0]);
+    char *name = String2Cstr((Object *) ostack[1]);
+    *ostack++ = (u4) Cstr2String(getDllName(path, name));
     return ostack;
 }
 
@@ -236,7 +237,7 @@ void setProperty(Object *this, char *key, char *value) {
 }
 
 u4 *insertSystemProperties(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *this = (Object *)*ostack;
+    Object *this = (Object *) *ostack;
 
     setProperty(this, "java.version", "");
     setProperty(this, "java.vendor", "");
@@ -268,112 +269,113 @@ u4 *insertSystemProperties(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* forName0(Ljava/lang/String;IL/java/lang/ClassLoader)Ljava/lang/Class; */
 u4 *forName0(Class *clazz, MethodBlock *mb, u4 *ostack) {
-    Object *string = (Object *)ostack[0];
+    Object *string = (Object *) ostack[0];
     int resolve = ostack[1];
-    Object *loader = (Object *)ostack[2];
+    Object *loader = (Object *) ostack[2];
     char *cstr = String2Cstr(string);
     Class *class;
     int i;
-    
-    for(i = 0; i < strlen(cstr); i++)
-        if(cstr[i]=='.') cstr[i]='/';
+
+    for (i = 0; i < strlen(cstr); i++)
+        if (cstr[i] == '.') cstr[i] = '/';
 
     class = findClassFromClassLoader(cstr, loader);
     free(cstr);
 
-    if(class == NULL) {
+    if (class == NULL) {
         clearException();
-	signalException("java/lang/ClassNotFoundException", NULL);
-    } else
-        if(resolve)
-            initClass(class);
+        signalException("java/lang/ClassNotFoundException", NULL);
+    } else if (resolve)
+        initClass(class);
 
-    *ostack++ = (u4)class;
+    *ostack++ = (u4) class;
     return ostack;
 }
 
 u4 *isInstance(Class *class, MethodBlock *mb, u4 *ostack) {
-    Class *clazz = (Class*)ostack[0];
-    Object *ob = (Object*)ostack[1];
+    Class *clazz = (Class *) ostack[0];
+    Object *ob = (Object *) ostack[1];
 
-    *ostack++ = ob == NULL ? FALSE : (u4)isInstanceOf(clazz, ob->class);
+    *ostack++ = ob == NULL ? FALSE : (u4) isInstanceOf(clazz, ob->class);
     return ostack;
 }
 
 u4 *isAssignableFrom(Class *class, MethodBlock *mb, u4 *ostack) {
-    Class *clazz = (Class*)ostack[0];
-    Class *clazz2 = (Class*)ostack[1];
+    Class *clazz = (Class *) ostack[0];
+    Class *clazz2 = (Class *) ostack[1];
 
-    if(clazz2 == NULL)
+    if (clazz2 == NULL)
         signalException("java/lang/NullPointerException", NULL);
     else
-        *ostack++ = (u4)isInstanceOf(clazz, clazz2);
+        *ostack++ = (u4) isInstanceOf(clazz, clazz2);
 
     return ostack;
 }
 
 u4 *isInterface(Class *class, MethodBlock *mb, u4 *ostack) {
-    ClassBlock *cb = CLASS_CB((Class*)ostack[0]);
+    ClassBlock *cb = CLASS_CB((Class *) ostack[0]);
     *ostack++ = IS_INTERFACE(cb) ? TRUE : FALSE;
     return ostack;
 }
 
 u4 *isPrimitive(Class *class, MethodBlock *mb, u4 *ostack) {
-    ClassBlock *cb = CLASS_CB((Class*)ostack[0]);
+    ClassBlock *cb = CLASS_CB((Class *) ostack[0]);
     *ostack++ = IS_PRIMITIVE(cb) ? TRUE : FALSE;
     return ostack;
 }
 
 u4 *getSuperclass(Class *class, MethodBlock *mb, u4 *ostack) {
-    ClassBlock *cb = CLASS_CB((Class*)ostack[0]);
+    ClassBlock *cb = CLASS_CB((Class *) ostack[0]);
     *ostack++ = (u4) (IS_PRIMITIVE(cb) || IS_INTERFACE(cb) ? NULL : cb->super);
     return ostack;
 }
 
 u4 *newInstance(Class *clazz, MethodBlock *mb, u4 *ostack) {
-    Class *class = (Class*)*ostack;
+    Class *class = (Class *) *ostack;
     Object *ob = allocObject(class);
     MethodBlock *init = findMethod(class, "<init>", "()V");
 
     executeMethod(ob, init);
-    *ostack++ = (u4)ob;
+    *ostack++ = (u4) ob;
     return ostack;
 }
 
 u4 *getName(Class *class, MethodBlock *mb, u4 *ostack) {
-    unsigned char *dot_name = slash2dots(CLASS_CB(((Class*)*ostack))->name);
-    Object *string = createString(dot_name);
-    *ostack++ = (u4)string;
-    free(dot_name);
+    // zeng: ostack中栈顶是对象地址 所以*ostack就是对象地址  这里取到该对象的类名
+    unsigned char *dot_name = slash2dots(CLASS_CB(((Class *) *ostack))->name);
+    Object *string = createString(dot_name);    // zeng: 创建String对象
+    *ostack++ = (u4) string;    // zeng: 原来的对象地址出栈 string对象地址入栈(其实这里ostack地址也是ret地址, 所以其实这里是赋值给ret作为返回值)
+    free(dot_name); // zeng: 释放空间
+
     return ostack;
 }
 
 u4 *getConstructor(Class *class, MethodBlock *mb, u4 *ostack) {
-    Class *clazz = (Class*)ostack[0];
-    Object *array = (Object*)ostack[1]; 
+    Class *clazz = (Class *) ostack[0];
+    Object *array = (Object *) ostack[1];
 
     *ostack++ = (u4) getClassConstructor(clazz, array);
     return ostack;
 }
 
 u4 *getClassLoader0(Class *class, MethodBlock *mb, u4 *ostack) {
-    Class *clazz = (Class*)*ostack;
-    *ostack++ = (u4)CLASS_CB(clazz)->class_loader;
+    Class *clazz = (Class *) *ostack;
+    *ostack++ = (u4) CLASS_CB(clazz)->class_loader;
     return ostack;
 }
 
 /* java.lang.Throwable */
 
 u4 *fillInStackTrace(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *this = (Object *)*ostack;
+    Object *this = (Object *) *ostack;
 
     setStackTrace(this);
-    return ostack+1;
+    return ostack + 1;
 }
 
 u4 *printStackTrace0(Class *class, MethodBlock *m, u4 *ostack) {
-    Object *this = (Object *)*ostack;
-    Object *writer = (Object *)ostack[1];
+    Object *this = (Object *) *ostack;
+    Object *writer = (Object *) ostack[1];
 
     printStackTrace(this, writer);
     return ostack;
@@ -382,7 +384,7 @@ u4 *printStackTrace0(Class *class, MethodBlock *m, u4 *ostack) {
 /* java.lang.VMSecurityManager */
 
 u4 *currentClassLoader(Class *class, MethodBlock *mb, u4 *ostack) {
-    *ostack++ = (u4)NULL;
+    *ostack++ = (u4) NULL;
     return ostack;
 }
 
@@ -399,22 +401,22 @@ u4 *getClassContext(Class *class, MethodBlock *mb, u4 *ostack) {
 */
     bottom = last;
     do {
-        for(; last->mb != NULL; last = last->prev, depth++);
-    } while((last = last->prev)->prev != NULL);
-    
+        for (; last->mb != NULL; last = last->prev, depth++);
+    } while ((last = last->prev)->prev != NULL);
+
     array = allocArray(class_class, depth, 4);
 
-    if(array != NULL) {
+    if (array != NULL) {
         data = INST_DATA(array);
 
         depth = 1;
         do {
-            for(; bottom->mb != NULL; bottom = bottom->prev)
-                data[depth++] = (int)bottom->mb->class;
-        } while((bottom = bottom->prev)->prev != NULL);
+            for (; bottom->mb != NULL; bottom = bottom->prev)
+                data[depth++] = (int) bottom->mb->class;
+        } while ((bottom = bottom->prev)->prev != NULL);
     }
 
-    *ostack++ = (int)array;
+    *ostack++ = (int) array;
     return ostack;
 }
 
@@ -422,32 +424,32 @@ u4 *getClassContext(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* getPrimitiveClass(Ljava/lang/String;)Ljava/lang/Class; */
 u4 *getPrimitiveClass(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *string = (Object *)*ostack;
+    Object *string = (Object *) *ostack;
     char *cstr = String2Cstr(string);
-    *ostack++ = (u4)findPrimClass(cstr);
+    *ostack++ = (u4) findPrimClass(cstr);
 
     free(cstr);
     return ostack;
 }
 
 u4 *defineClass0(Class *clazz, MethodBlock *mb, u4 *ostack) {
-    Object *class_loader = (Object *)ostack[0];
-    Object *string = (Object *)ostack[1];
-    Object *array = (Object *)ostack[2];
+    Object *class_loader = (Object *) ostack[0];
+    Object *string = (Object *) ostack[1];
+    Object *array = (Object *) ostack[2];
     int offset = ostack[3];
     int len = ostack[4];
-    char *data = ((char*)INST_DATA(array)) + 4;
+    char *data = ((char *) INST_DATA(array)) + 4;
     Class *class = defineClass(data, offset, len, class_loader);
 
-    if(class != NULL)
+    if (class != NULL)
         linkClass(class);
 
-    *ostack++ = (int)class;
+    *ostack++ = (int) class;
     return ostack;
 }
 
 u4 *resolveClass0(Class *class, MethodBlock *mb, u4 *ostack) {
-    Class *clazz = (Class *)*ostack++;
+    Class *clazz = (Class *) *ostack++;
 
     initClass(clazz);
     return ostack;
@@ -456,12 +458,12 @@ u4 *resolveClass0(Class *class, MethodBlock *mb, u4 *ostack) {
 /* java.lang.reflect.Constructor */
 
 u4 *constructNative(Class *class, MethodBlock *mb2, u4 *ostack) {
-    Object *array = (Object*)ostack[1]; 
-    Class *clazz = (Class*)ostack[2];
-    MethodBlock *mb = (MethodBlock*)ostack[3]; 
+    Object *array = (Object *) ostack[1];
+    Class *clazz = (Class *) ostack[2];
+    MethodBlock *mb = (MethodBlock *) ostack[3];
     Object *ob = allocObject(clazz);
 
-    *ostack++ = *(u4*)invoke(ob, clazz, mb, array);
+    *ostack++ = *(u4 *) invoke(ob, clazz, mb, array);
     return ostack;
 }
 
@@ -469,16 +471,16 @@ u4 *constructNative(Class *class, MethodBlock *mb2, u4 *ostack) {
 
 /* static method - intern(Ljava/lang/String;)Ljava/lang/String; */
 u4 *intern(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *string = (Object*)ostack[0];
-    ostack[0] = (u4)findInternedString(string);
-    return ostack+1;
+    Object *string = (Object *) ostack[0];
+    ostack[0] = (u4) findInternedString(string);
+    return ostack + 1;
 }
 
 /* java.lang.Thread */
 
 /* static method currentThread()Ljava/lang/Thread; */
 u4 *currentThread(Class *class, MethodBlock *mb, u4 *ostack) {
-    *ostack++ = (u4)getExecEnv()->thread;
+    *ostack++ = (u4) getExecEnv()->thread;
     return ostack;
 }
 
@@ -489,14 +491,14 @@ u4 *nativeInit(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* instance method start()V */
 u4 *start(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *this = (Object *)*ostack;
+    Object *this = (Object *) *ostack;
     createJavaThread(this);
     return ostack;
 }
 
 /* static method sleep(JI)V */
 u4 *jamSleep(Class *class, MethodBlock *mb, u4 *ostack) {
-    long long ms = *((long long *)&ostack[0]);
+    long long ms = *((long long *) &ostack[0]);
     int ns = ostack[2];
     Thread *thread = threadSelf();
 
@@ -507,16 +509,16 @@ u4 *jamSleep(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* instance method interrupt()V */
 u4 *interrupt(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *this = (Object *)*ostack;
+    Object *this = (Object *) *ostack;
     Thread *thread = threadSelf0(this);
-    if(thread)
+    if (thread)
         threadInterrupt(thread);
     return ostack;
 }
 
 /* instance method isAlive()Z */
 u4 *isAlive(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *this = (Object *)*ostack;
+    Object *this = (Object *) *ostack;
     Thread *thread = threadSelf0(this);
     *ostack++ = thread ? threadIsAlive(thread) : FALSE;
     return ostack;
@@ -531,7 +533,7 @@ u4 *yield(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* instance method isInterrupted()Z */
 u4 *isInterrupted(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *this = (Object *)*ostack;
+    Object *this = (Object *) *ostack;
     Thread *thread = threadSelf0(this);
     *ostack++ = thread ? threadIsInterrupted(thread) : FALSE;
     return ostack;
@@ -546,53 +548,55 @@ u4 *interrupted(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* instance method nativeSetPriority()V */
 u4 *nativeSetPriority(Class *class, MethodBlock *mb, u4 *ostack) {
-    return ostack+1;
+    return ostack + 1;
 }
 
+// zeng: TODO
 char *native_methods[][2] = {
-                             "arraycopy",		(char*)arraycopy,
-                             "insertSystemProperties",	(char*)insertSystemProperties,
-                             "getPrimitiveClass",	(char*)getPrimitiveClass,
-			     "defineClass",             (char*)defineClass0,
-			     "resolveClass",            (char*)resolveClass0,
-                             "intern",			(char*)intern,
-                             "forName0",		(char*)forName0,
-                             "newInstance",		(char*)newInstance,
-			     "isInstance",		(char*)isInstance,
-			     "isAssignableFrom",	(char*)isAssignableFrom,
-			     "isInterface",		(char*)isInterface,
-			     "isPrimitive",		(char*)isPrimitive,
-                             "getSuperclass",		(char*)getSuperclass,
-                             "getName",			(char*)getName,
-                             "getClass",		(char*)getClass,
-                             "identityHashCode",	(char*)identityHashCode,
-			     "clone",			(char*)jamClone,
-			     "wait",			(char*)wait,
-			     "notify",			(char*)notify,
-			     "notifyAll",		(char*)notifyAll,
-                             "gc",			(char*)gc,
-                             "runFinalization",		(char*)runFinalization,
-                             "exitInternal",		(char*)exitInternal,
-                             "fillInStackTrace",	(char*)fillInStackTrace,
-                             "printStackTrace0",	(char*)printStackTrace0,
-			     "currentClassLoader",	(char*)currentClassLoader,
-			     "getClassContext",		(char*)getClassContext,
-			     "getConstructor",		(char*)getConstructor,
-			     "getClassLoader0",		(char*)getClassLoader0,
-			     "constructNative",		(char*)constructNative,
-                             "nativeLoad",		(char*)nativeLoad,
-                             "nativeGetLibname",	(char*)nativeGetLibname,
-			     "freeMemory",		(char*)freeMemory,
-			     "totalMemory",		(char*)totalMemory,
-			     "maxMemory",		(char*)maxMemory,
-			     "currentThread",		(char*)currentThread,
-			     "nativeInit",		(char*)nativeInit,
-			     "start",			(char*)start,
-			     "sleep",			(char*)jamSleep,
-			     "nativeInterrupt",		(char*)interrupt,
-			     "isAlive",			(char*)isAlive,
-			     "yield",			(char*)yield,
-			     "isInterrupted",		(char*)isInterrupted,
-			     "interrupted",		(char*)interrupted,
-			     "nativeSetPriority",	(char*)nativeSetPriority,
-                             NULL,			NULL};
+        "arraycopy", (char *) arraycopy,
+        "insertSystemProperties", (char *) insertSystemProperties,
+        "getPrimitiveClass", (char *) getPrimitiveClass,
+        "defineClass", (char *) defineClass0,
+        "resolveClass", (char *) resolveClass0,
+        "intern", (char *) intern,
+        "forName0", (char *) forName0,
+        "newInstance", (char *) newInstance,
+        "isInstance", (char *) isInstance,
+        "isAssignableFrom", (char *) isAssignableFrom,
+        "isInterface", (char *) isInterface,
+        "isPrimitive", (char *) isPrimitive,
+        "getSuperclass", (char *) getSuperclass,
+        "getName", (char *) getName,
+        "getClass", (char *) getClass,
+        "identityHashCode", (char *) identityHashCode,
+        "clone", (char *) jamClone,
+        "wait", (char *) wait,
+        "notify", (char *) notify,
+        "notifyAll", (char *) notifyAll,
+        "gc", (char *) gc,
+        "runFinalization", (char *) runFinalization,
+        "exitInternal", (char *) exitInternal,
+        "fillInStackTrace", (char *) fillInStackTrace,
+        "printStackTrace0", (char *) printStackTrace0,
+        "currentClassLoader", (char *) currentClassLoader,
+        "getClassContext", (char *) getClassContext,
+        "getConstructor", (char *) getConstructor,
+        "getClassLoader0", (char *) getClassLoader0,
+        "constructNative", (char *) constructNative,
+        "nativeLoad", (char *) nativeLoad,
+        "nativeGetLibname", (char *) nativeGetLibname,
+        "freeMemory", (char *) freeMemory,
+        "totalMemory", (char *) totalMemory,
+        "maxMemory", (char *) maxMemory,
+        "currentThread", (char *) currentThread,
+        "nativeInit", (char *) nativeInit,
+        "start", (char *) start,
+        "sleep", (char *) jamSleep,
+        "nativeInterrupt", (char *) interrupt,
+        "isAlive", (char *) isAlive,
+        "yield", (char *) yield,
+        "isInterrupted", (char *) isInterrupted,
+        "interrupted", (char *) interrupted,
+        "nativeSetPriority", (char *) nativeSetPriority,
+        NULL, NULL  // zeng: 用来标识结尾
+};
