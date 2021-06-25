@@ -57,7 +57,7 @@ char isInstOfArray(Class *class, Class *test) {
     }
 }
 
-// zeng: test是否是class的子类
+// zeng: test是否是class或者是class的子类
 char isInstanceOf(Class *class, Class *test) {
     if(class == test)
         return TRUE;

@@ -35,8 +35,11 @@
 /* java.lang.VMObject */
 
 u4 *getClass(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *ob = (Object *) *ostack;
+    Object *ob = (Object *) *ostack;    // zeng: 获得对象地址
+
+    // zeng: ob -> class , 入栈
     *ostack++ = (u4) ob->class;
+
     return ostack;
 }
 
@@ -198,7 +201,8 @@ u4 *maxMemory(Class *class, MethodBlock *mb, u4 *ostack) {
 }
 
 u4 *gc(Class *class, MethodBlock *mb, u4 *ostack) {
-    gc1();
+    gc1();  // zeng: 执行gc
+
     return ostack;
 }
 
@@ -271,35 +275,43 @@ u4 *insertSystemProperties(Class *class, MethodBlock *mb, u4 *ostack) {
 /* java.lang.Class */
 
 /* forName0(Ljava/lang/String;IL/java/lang/ClassLoader)Ljava/lang/Class; */
+// zeng: 查找 加载 链接 初始化 class
 u4 *forName0(Class *clazz, MethodBlock *mb, u4 *ostack) {
-    Object *string = (Object *) ostack[0];
-    int resolve = ostack[1];
-    Object *loader = (Object *) ostack[2];
-    char *cstr = String2Cstr(string);
+    Object *string = (Object *) ostack[0];  // zeng: 类名
+    int resolve = ostack[1];    //zeng: 是否初始化类
+    Object *loader = (Object *) ostack[2];  // zeng: classloader地址
+    char *cstr = String2Cstr(string);   // zeng: 转为c字符串
     Class *class;
     int i;
 
+    // 替换 . 为 /
     for (i = 0; i < strlen(cstr); i++)
         if (cstr[i] == '.') cstr[i] = '/';
 
+    // zeng: 查找 加载 链接 class
     class = findClassFromClassLoader(cstr, loader);
+
+    // zeng: 释放c字符串空间
     free(cstr);
 
     if (class == NULL) {
         clearException();
         signalException("java/lang/ClassNotFoundException", NULL);
     } else if (resolve)
-        initClass(class);
+        initClass(class);   // zeng: 执行初始化方法
 
-    *ostack++ = (u4) class;
+    *ostack++ = (u4) class; // zeng: class地址入栈
+
     return ostack;
 }
 
 u4 *isInstance(Class *class, MethodBlock *mb, u4 *ostack) {
-    Class *clazz = (Class *) ostack[0];
-    Object *ob = (Object *) ostack[1];
+    Class *clazz = (Class *) ostack[0]; // zeng: class对象地址
+    Object *ob = (Object *) ostack[1];  // zeng: 对象地址
 
+    // zeng: ob类是否class类或者class的子类, 结果入栈
     *ostack++ = ob == NULL ? FALSE : (u4) isInstanceOf(clazz, ob->class);
+
     return ostack;
 }
 
@@ -328,18 +340,23 @@ u4 *isPrimitive(Class *class, MethodBlock *mb, u4 *ostack) {
 }
 
 u4 *getSuperclass(Class *class, MethodBlock *mb, u4 *ostack) {
-    ClassBlock *cb = CLASS_CB((Class *) ostack[0]);
-    *ostack++ = (u4) (IS_PRIMITIVE(cb) || IS_INTERFACE(cb) ? NULL : cb->super);
+    ClassBlock *cb = CLASS_CB((Class *) ostack[0]); // zeng: 从操组数栈中获取class地址, 进而取得ClassBlock
+
+    *ostack++ = (u4) (IS_PRIMITIVE(cb) || IS_INTERFACE(cb) ? NULL : cb->super); // zeng: cb->super, 入栈
+
     return ostack;
 }
 
 u4 *newInstance(Class *clazz, MethodBlock *mb, u4 *ostack) {
-    Class *class = (Class *) *ostack;
-    Object *ob = allocObject(class);
-    MethodBlock *init = findMethod(class, "<init>", "()V");
+    Class *class = (Class *) *ostack;  // zeng: class对象地址
+    Object *ob = allocObject(class);    // zeng: 分配对象
 
+    // zeng: 执行void <init>()方法
+    MethodBlock *init = findMethod(class, "<init>", "()V");
     executeMethod(ob, init);
-    *ostack++ = (u4) ob;
+
+    *ostack++ = (u4) ob;    // zeng: 对象地址入栈
+
     return ostack;
 }
 
@@ -387,15 +404,20 @@ u4 *printStackTrace0(Class *class, MethodBlock *m, u4 *ostack) {
 /* java.lang.VMSecurityManager */
 
 u4 *currentClassLoader(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: NULL入栈
     *ostack++ = (u4) NULL;
+
     return ostack;
 }
 
+// zeng: 当前调用链上的所有class对象依次加入数组中, 数组对象地址入栈
 u4 *getClassContext(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 数组类class对象
     Class *class_class = findArrayClass("[Ljava/lang/Class;");
     Object *array;
     int *data;
 
+    // zeng: 当前栈帧
     Frame *bottom, *last = getExecEnv()->last_frame;
     int depth = 0;
 /* 
@@ -407,6 +429,7 @@ u4 *getClassContext(Class *class, MethodBlock *mb, u4 *ostack) {
         for (; last->mb != NULL; last = last->prev, depth++);
     } while ((last = last->prev)->prev != NULL);
 
+    // zeng: 分配数组
     array = allocArray(class_class, depth, 4);
 
     if (array != NULL) {
@@ -414,12 +437,14 @@ u4 *getClassContext(Class *class, MethodBlock *mb, u4 *ostack) {
 
         depth = 1;
         do {
-            for (; bottom->mb != NULL; bottom = bottom->prev)
-                data[depth++] = (int) bottom->mb->class;
+            for (; bottom->mb != NULL; bottom = bottom->prev)   // zeng: 遍历栈帧
+                data[depth++] = (int) bottom->mb->class;    // zeng: 栈帧方法所在class对象进入数组
         } while ((bottom = bottom->prev)->prev != NULL);
     }
 
+    // zeng: 数组对象入栈
     *ostack++ = (int) array;
+
     return ostack;
 }
 
@@ -435,26 +460,38 @@ u4 *getPrimitiveClass(Class *class, MethodBlock *mb, u4 *ostack) {
     return ostack;
 }
 
+// zeng: 解析与链接类
 u4 *defineClass0(Class *clazz, MethodBlock *mb, u4 *ostack) {
-    Object *class_loader = (Object *) ostack[0];
+    // zeng: 操作数栈中取调用参数
+
+    Object *class_loader = (Object *) ostack[0] // zeng: classloader地址
     Object *string = (Object *) ostack[1];
-    Object *array = (Object *) ostack[2];
-    int offset = ostack[3];
-    int len = ostack[4];
-    char *data = ((char *) INST_DATA(array)) + 4;
+    Object *array = (Object *) ostack[2];   // zeng: 字节码数据数组
+    int offset = ostack[3]; // zeng: 从data + offset开始解析字节码数据
+    int len = ostack[4];    // zeng: data字节数
+    char *data = ((char *) INST_DATA(array)) + 4;   // zeng: 字节码数据数组内容体
+
+    // zeng: 根据字节码数据构建Class对象
     Class *class = defineClass(data, offset, len, class_loader);
 
+    // zeng: 链接
     if (class != NULL)
         linkClass(class);
 
+    // zeng: 参数出栈, Class对象地址入栈
     *ostack++ = (int) class;
+
     return ostack;
 }
 
+// zeng: 主要就是执行类的初始化方法
 u4 *resolveClass0(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 操作数栈中获取class对象地址
     Class *clazz = (Class *) *ostack++;
 
+    // zeng: 执行类的初始化方法
     initClass(clazz);
+
     return ostack;
 }
 
@@ -474,8 +511,12 @@ u4 *constructNative(Class *class, MethodBlock *mb2, u4 *ostack) {
 
 /* static method - intern(Ljava/lang/String;)Ljava/lang/String; */
 u4 *intern(Class *class, MethodBlock *mb, u4 *ostack) {
-    Object *string = (Object *) ostack[0];
+    Object *string = (Object *) ostack[0];  // zeng: String对象地址
+
+    // zeng: 是否已经有内容中字符完全一致的String对象, 如果有返回旧对象, 如果没有将新对象加入hash表
+    // zeng: 找到的String对象地址 替换 原String对象地址
     ostack[0] = (u4) findInternedString(string);
+
     return ostack + 1;
 }
 

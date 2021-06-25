@@ -1140,7 +1140,7 @@ Object *allocArray(Class *class, int size, int el_size) {
         // zeng: 对象体刚开始是数组长度
         *INST_DATA(ob) = size;
 
-        // zeng: 数组object -> class 为 元素的class
+        // zeng: 数组object -> class 为 数组的class
         ob->class = class;
 
         // zeng: 打印分配日志

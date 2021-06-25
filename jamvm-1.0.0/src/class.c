@@ -93,8 +93,9 @@ static Class *addClassToHash(Class *class) {
     return entry;
 }
 
+// zeng: 解析字节码数据, 用以构建Class对象, 返回Class对象地址
 Class *defineClass(char *data, int offset, int len, Object *class_loader) {
-    unsigned char *ptr = (unsigned char *) data + offset;
+    unsigned char *ptr = (unsigned char *)flen data + offset;
     int cp_count, intf_count, i;
     u2 major_version, minor_version, this_idx, super_idx;
     u2 attr_count;
@@ -699,6 +700,7 @@ void linkClass(Class *class) {
     cb->flags = CLASS_LINKED;
 }
 
+// zeng: 如果没链接就先链接, 然后主要是执行 void <clinit>()
 Class *initClass(Class *class) {
     ClassBlock *cb = CLASS_CB(class);
     FieldBlock *fb = cb->fields;
@@ -846,6 +848,7 @@ Class *findHashedClass(char *classname, Object *class_loader) {
     return class;
 }
 
+// zeng: 查找 加载 链接 class
 Class *findSystemClass0(char *classname) {
     // zeng: 先从hash表找
     Class *class = findHashedClass(classname, NULL);
@@ -895,6 +898,7 @@ Class *findPrimClass(char *classname) {
     return prim ? prim : createPrimClass(classname);
 }
 
+// zeng: 查找 加载 链接 class. 如果classloader不为空, 那么就调用`Class classloader.loadClass(String name)`, 否则就调用findSystemClass0由c处理
 Class *findClassFromClassLoader(char *classname, Object *loader) {
     // zeng: 如果是数组
     if (*classname == '[')
