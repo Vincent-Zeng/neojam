@@ -76,11 +76,14 @@ u4 *notifyAll(Class *class, MethodBlock *mb, u4 *ostack) {
 /* java.lang.VMSystem */
 
 /* arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V */
+// zeng: 复制数组内容 实现上大致就是使用memmove操作数组内容体
 u4 *arraycopy(Class *class, MethodBlock *mb, u4 *ostack) {
     Object *src = (Object *) ostack[0];
     int start1 = ostack[1];
+
     Object *dest = (Object *) ostack[2];
     int start2 = ostack[3];
+
     int length = ostack[4];
 
 
@@ -173,30 +176,24 @@ u4 *identityHashCode(Class *class, MethodBlock *mb, u4 *ostack) {
 
 /* java.lang.Runtime */
 
+// zeng: 空闲heap大小 入栈
 u4 *freeMemory(Class *class, MethodBlock *mb, u4 *ostack) {
-    u8 *temp = (u8 *) ostack;
-    *temp = (u8) freeHeapMem();
-    temp++;
-    ostack = temp;
-    //*((u8*)ostack)++ = (u8) freeHeapMem();
+    *((u8 *) ostack)++ = (u8) freeHeapMem();
+
     return ostack;
 }
 
+// zeng: heap大小 入栈
 u4 *totalMemory(Class *class, MethodBlock *mb, u4 *ostack) {
-    //*((u8*)ostack)++ = (u8) totalHeapMem();
-    u8 *temp = (u8 *) ostack;
-    *temp = (u8) freeHeapMem();
-    temp++;
-    ostack = temp;
+    *((u8 *) ostack)++ = (u8) totalHeapMem();
+
     return ostack;
 }
 
+// zeng: heap上限 入栈
 u4 *maxMemory(Class *class, MethodBlock *mb, u4 *ostack) {
-    //*((u8*)ostack)++ = (u8) maxHeapMem();
-    u8 *temp = (u8 *) ostack;
-    *temp = (u8) freeHeapMem();
-    temp++;
-    ostack = temp;
+    *((u8 *) ostack)++ = (u8) maxHeapMem();
+
     return ostack;
 }
 
@@ -227,23 +224,34 @@ u4 *nativeLoad(Class *class, MethodBlock *mb, u4 *ostack) {
     return ostack + 1;
 }
 
+// zeng: 路径名 + 动态库名 拼成 动态库全限定名
 u4 *nativeGetLibname(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 路径名
     char *path = String2Cstr((Object *) ostack[0]);
+    // zeng: 动态库名
     char *name = String2Cstr((Object *) ostack[1]);
+    // zeng: 拼成动态库全限定名, String对象地址入栈
     *ostack++ = (u4) Cstr2String(getDllName(path, name));
+
     return ostack;
 }
 
 void setProperty(Object *this, char *key, char *value) {
+    // zeng: key
     Object *k = Cstr2String(key);
+    // zeng: value
     Object *v = Cstr2String(value);
 
+    // zeng: 获取类中的`Object put(Object arg1, Object arg2)`方法
     MethodBlock *mb = lookupMethod(this->class, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
 
+    // zeng: 执行方法, 参数为 key value
     executeMethod(this, mb, k, v);
 }
 
+// zeng: 把java属性设置进对象中
 u4 *insertSystemProperties(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 栈中获取对象地址
     Object *this = (Object *) *ostack;
 
     setProperty(this, "java.version", "");
@@ -315,6 +323,7 @@ u4 *isInstance(Class *class, MethodBlock *mb, u4 *ostack) {
     return ostack;
 }
 
+// zeng: 类 是否 另一个类 或者是另一个类的子类
 u4 *isAssignableFrom(Class *class, MethodBlock *mb, u4 *ostack) {
     Class *clazz = (Class *) ostack[0];
     Class *clazz2 = (Class *) ostack[1];
@@ -328,14 +337,22 @@ u4 *isAssignableFrom(Class *class, MethodBlock *mb, u4 *ostack) {
 }
 
 u4 *isInterface(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 栈中取得class对象地址, 进而取得ClassBlock
     ClassBlock *cb = CLASS_CB((Class *) ostack[0]);
+
+    // zeng: 是否是接口类, 入栈
     *ostack++ = IS_INTERFACE(cb) ? TRUE : FALSE;
+
     return ostack;
 }
 
 u4 *isPrimitive(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 栈中取得class对象地址, 进而取得ClassBlock
     ClassBlock *cb = CLASS_CB((Class *) ostack[0]);
+
+    // zeng: 是否是基本类型, 入栈
     *ostack++ = IS_PRIMITIVE(cb) ? TRUE : FALSE;
+
     return ostack;
 }
 
@@ -370,16 +387,21 @@ u4 *getName(Class *class, MethodBlock *mb, u4 *ostack) {
     return ostack;
 }
 
+// zeng: 获取类的<init>方法对应的Constructor对象 对象地址入栈
 u4 *getConstructor(Class *class, MethodBlock *mb, u4 *ostack) {
-    Class *clazz = (Class *) ostack[0];
-    Object *array = (Object *) ostack[1];
+    Class *clazz = (Class *) ostack[0]; // zeng: class对象地址
+    Object *array = (Object *) ostack[1];   // zeng: 参数数组地址
 
     *ostack++ = (u4) getClassConstructor(clazz, array);
+
     return ostack;
 }
 
+// zeng: 获取加载指定类的classloader
 u4 *getClassLoader0(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 类的class对象
     Class *clazz = (Class *) *ostack;
+    // zeng: 获取classloader 入栈
     *ostack++ = (u4) CLASS_CB(clazz)->class_loader;
     return ostack;
 }
@@ -451,12 +473,17 @@ u4 *getClassContext(Class *class, MethodBlock *mb, u4 *ostack) {
 /* java.lang.VMClassLoader */
 
 /* getPrimitiveClass(Ljava/lang/String;)Ljava/lang/Class; */
+// zeng: 获取基本类型的class对象
 u4 *getPrimitiveClass(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 类型名
     Object *string = (Object *) *ostack;
     char *cstr = String2Cstr(string);
+
+    // zeng: 获取class对象 入栈
     *ostack++ = (u4) findPrimClass(cstr);
 
     free(cstr);
+
     return ostack;
 }
 
@@ -496,14 +523,19 @@ u4 *resolveClass0(Class *class, MethodBlock *mb, u4 *ostack) {
 }
 
 /* java.lang.reflect.Constructor */
-
+// zeng: 调用方法
 u4 *constructNative(Class *class, MethodBlock *mb2, u4 *ostack) {
+    // zeng: 参数数组地址
     Object *array = (Object *) ostack[1];
+    // zeng: 类的class对象地址
     Class *clazz = (Class *) ostack[2];
+    // zeng: MethodBlock地址
     MethodBlock *mb = (MethodBlock *) ostack[3];
+    // zeng: 给类分配一个对象
     Object *ob = allocObject(clazz);
-
+    // zeng: 调用方法, 返回值入栈
     *ostack++ = *(u4 *) invoke(ob, clazz, mb, array);
+
     return ostack;
 }
 

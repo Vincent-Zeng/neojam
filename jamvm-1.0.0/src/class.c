@@ -449,7 +449,7 @@ Class *defineClass(char *data, int offset, int len, Object *class_loader) {
     if (exceptionOccured())
         return NULL;
 
-    // zeng: class -> class 为 java/lang/Class类 TODO Class类怎么用的?
+    // zeng: class -> class 为 java/lang/Class类 Class类怎么用的? 用来获取类 方法 字段等的信息
     if (strcmp(classblock->name, "java/lang/Class") == 0)
         class->class = class;
     else {
@@ -523,37 +523,43 @@ Class *createArrayClass(char *classname, Object *class_loader) {
     return addClassToHash(class);
 }
 
-// zeng: TODO
+// zeng: 创建基本类型的class对象
 Class *createPrimClass(char *classname) {
     Class *class;
     ClassBlock *classblock;
     int i;
 
+    // zeng: 分配一个class对象
     if ((class = allocClass()) == NULL)
         return NULL;
 
     classblock = CLASS_CB(class);
-    classblock->name = strcpy((char *) malloc(strlen(classname) + 1), classname);
+    classblock->name = strcpy((char *) malloc(strlen(classname) + 1), classname);   // zeng: 设置名称
     classblock->methods_count = 0;
     classblock->fields_count = 0;
     classblock->interfaces_count = 0;
 
-    classblock->flags = CLASS_INTERNAL;
+    classblock->flags = CLASS_INTERNAL; // zeng: internal标识
 
     if (java_lang_Class == NULL)
         java_lang_Class = loadSystemClass("java/lang/Class");
 
+    // zeng: class对象的class对象是Class
     class->class = java_lang_Class;
 
+    // zeng: 上锁
     lockHashTable(loaded_classes);
 
+    //zeng: 再确认下prim_classes中有没有该class对象
     for (i = 0; (i < num_prim) && (strcmp(CLASS_CB(prim_classes[i])->name, classname) == 0); i++);
-    if (i == num_prim)
-        prim_classes[num_prim++] = class;
+    if (i == num_prim)  // zeng: 如果没有
+        prim_classes[num_prim++] = class;   // zeng: 将class对象加入prim_classes
     else
-        class = prim_classes[i];
+        class = prim_classes[i];    // zeng: 使用prim_classes中找到的class对象
 
+    // zeng: 释放锁
     unlockHashTable(loaded_classes);
+
     return class;
 }
 
@@ -885,16 +891,23 @@ Class *findArrayClassFromClassLoader(char *classname, Object *class_loader) {
     return class;
 }
 
+// zeng: 获取基本类型的class对象
 Class *findPrimClass(char *classname) {
     int i;
     Class *prim = NULL;
 
+    // zeng: hash表上锁
     lockHashTable(loaded_classes);
+
+    // zeng: 遍历prim_classes, 查找是否已经有名称相同的class对象
     for (i = 0; (i < num_prim) && (strcmp(CLASS_CB(prim_classes[i])->name, classname) == 0); i++);
     if (i < num_prim)
         prim = prim_classes[i];
 
+    // zeng: 释放锁
     unlockHashTable(loaded_classes);
+
+    // zeng: 如果没有, 就创建class对象
     return prim ? prim : createPrimClass(classname);
 }
 
@@ -940,8 +953,10 @@ extern void markClass(Class *ob);
 void markClasses() {
     int i;
 
+    // zeng: 引用类型的class对象
     hashIterate(loaded_classes);
 
+    // zeng: 基本类型的class对象
     for (i = 0; i < num_prim; i++)
         markClass(prim_classes[i]);
 }

@@ -265,10 +265,13 @@ char *getDllPath() {
     return getenv("LD_LIBRARY_PATH");
 }
 
+// zeng: 路径名 + 动态库名 拼成 动态库全限定名
 char *getDllName(char *path, char *name) {
    static char buff[256];
 
+   // zeng: 拼成全限定名
    sprintf(buff, "%s/lib%s.so", path, name);
+
    return buff;
 }
 

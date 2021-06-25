@@ -414,7 +414,9 @@ typedef struct exec_env {
 // zeng: 是Class对象
 #define IS_CLASS(object)		(!object->class || (object->class == java_lang_Class))
 
+// zeng: 是否是接口类
 #define IS_INTERFACE(cb) (cb->access_flags & ACC_INTERFACE)
+// zeng: 是否是基本类型
 #define IS_PRIMITIVE(cb) ((cb->flags == CLASS_INTERNAL) && (cb->name[0] != '['))
 
 /* Should remove these */
