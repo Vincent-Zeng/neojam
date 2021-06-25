@@ -210,11 +210,14 @@ u4 *exitInternal(Class *class, MethodBlock *mb, u4 *ostack) {
     exit(0);
 }
 
-// zeng: TODO
+// zeng: 打开动态库, 并把handler放入hash表
 u4 *nativeLoad(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 动态库 路径及名称
     char *name = String2Cstr((Object *) ostack[1]);
 
+    // zeng: 打开动态库, 并把handler放入hash表. 返回值表示加载成功与否
     ostack[0] = resolveDll(name);
+
     free(name);
 
     return ostack + 1;

@@ -876,7 +876,7 @@ Class *findArrayClassFromClassLoader(char *classname, Object *class_loader) {
     Class *class = findHashedClass(classname, class_loader);
 
     if (class == NULL)
-        // zeng: TODO 创建数组类
+        // zeng: 创建数组对象
         class = createArrayClass(classname, class_loader);
 
     return class;

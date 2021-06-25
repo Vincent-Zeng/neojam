@@ -207,7 +207,7 @@ static void doMark(Thread *self) {
     markClasses();
     // zeng: 所有和constant_pool有关的String对象 都做标记
     markInternedStrings();
-    // zeng: TODO
+    // zeng: jni global 引用, 需要做标记
     markJNIGlobalRefs();
     // zeng: 扫描 本地变量数组 和 操作数栈, 找到对象地址 就做标记
     scanThreads();

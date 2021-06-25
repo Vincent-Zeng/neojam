@@ -125,7 +125,7 @@ char *mangleClassAndMethodName(MethodBlock *mb) {
     return mangled;
 }
 
-// zeng: TODO 使用方法描述符作为方法名来查找c方法?
+// zeng: 方法描述符进行mangle处理
 char *mangleSignature(MethodBlock *mb) {
     char *type = mb->type;
     char *nonMangled;
@@ -201,6 +201,7 @@ typedef struct {
     void *handle;
 } DllEntry;
 
+// zeng: 取hash值
 int dllNameHash(char *name) {
     int hash = 0;
 
@@ -210,7 +211,7 @@ int dllNameHash(char *name) {
     return hash;
 }
 
-// zeng: TODO
+// zeng: 打开动态库, 并把handler放入hash表
 int resolveDll(char *name) {
     DllEntry *dll;
 
@@ -223,10 +224,13 @@ int resolveDll(char *name) {
 #define SCAVENGE(ptr) FALSE
 #define FOUND(ptr)
 
+    // zeng: hash 表是否已存在
     findHashEntry(hash_table, name, dll, FALSE, FALSE);
 
     if(dll == NULL) {
         DllEntry *dll2;
+
+        // zeng: 打开动态库, 开启`延迟绑定`, 返回handler
         void *handle = dlopen(name, RTLD_LAZY);
 
         if(handle == NULL)
@@ -234,20 +238,23 @@ int resolveDll(char *name) {
 
         TRACE(("<Dll: Successfully opened library %s>\n",name));
 
+        // zeng: 分配DllEntry空间
         dll = (DllEntry*)malloc(sizeof(DllEntry));
         if(dll == NULL)
             return -1;
 
-        // zeng: 设置jni c方法信息
+        // zeng: 设置DllEntry信息
         dll->name = strcpy((char*)malloc(strlen(name)+1), name);
         dll->handle = handle;
 
         #undef HASH
         #undef COMPARE
         #define HASH(ptr) dllNameHash(ptr->name)
+        // zeng: 名称相同即同一个动态库
         #define COMPARE(ptr1, ptr2, hash1, hash2) \
                   ((hash1 == hash2) && (strcmp(ptr1->name, ptr2->name) == 0))
 
+        // zeng: 加入hash表
         findHashEntry(hash_table, dll, dll2, TRUE, FALSE);
     }
 
