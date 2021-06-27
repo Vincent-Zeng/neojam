@@ -43,33 +43,56 @@ u4 *getClass(Class *class, MethodBlock *mb, u4 *ostack) {
     return ostack;
 }
 
+// zeng: 复制对象
 u4 *jamClone(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 操作栈获取要复制的对象地址
     Object *ob = (Object *) *ostack;
+    //  zeng: 复制对象, 复制的对象地址 入栈
     *ostack++ = (u4) cloneObject(ob);
+
     return ostack;
 }
 
 /* static method wait(Ljava/lang/Object;JI)V */
+// zeng: 线程进入wait等待队列, 直到条件满足被唤醒或者被interrupt
 u4 *wait(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 操作栈中获取 对象地址
     Object *obj = (Object *) ostack[0];
+
+    // zeng: 操作栈中获取超时时间 ms
     long long ms = *((long long *) &ostack[1]);
+
+    // zeng: 操作栈中获取超时时间 ns
     int ns = ostack[3];
 
+    // zeng: 进入对象对应的monitor结构体的wait等待队列, 直到条件满足被唤醒或者被interrupt
     objectWait(obj, ms, ns);
+
+    // zeng: 参数出栈
     return ostack;
 }
 
 /* static method notify(Ljava/lang/Object;)V */
+// zeng: 唤醒在wait等待队列上的一个线程
 u4 *notify(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 操作栈获取对象地址
     Object *obj = (Object *) *ostack;
+
+    // zeng: 唤醒在 `对象对应的monitor结构体的wait等待队列` 上的一个线程
     objectNotify(obj);
+
     return ostack;
 }
 
 /* static method notifyAll(Ljava/lang/Object;)V */
+// zeng: 唤醒在wait等待队列上的所有线程
 u4 *notifyAll(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 操作栈获取对象地址
     Object *obj = (Object *) *ostack;
+
+    // zeng: 唤醒在 `对象对应的monitor结构体的wait等待队列` 上的所有线程
     objectNotifyAll(obj);
+
     return ostack;
 }
 
@@ -407,19 +430,27 @@ u4 *getClassLoader0(Class *class, MethodBlock *mb, u4 *ostack) {
 }
 
 /* java.lang.Throwable */
-
+// zeng: 将发生异常出往前的调用链信息写入异常对象中
 u4 *fillInStackTrace(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 获取异常对象地址
     Object *this = (Object *) *ostack;
 
+    // zeng: 将发生异常出往前的调用链信息写入异常对象中
     setStackTrace(this);
+
     return ostack + 1;
 }
 
+// zeng: 输出 异常发生处 往前的调用链 信息
 u4 *printStackTrace0(Class *class, MethodBlock *m, u4 *ostack) {
+    // zeng: 异常对象地址
     Object *this = (Object *) *ostack;
+    // zeng: writer对象地址
     Object *writer = (Object *) ostack[1];
 
+    // zeng: 将调用链信息用字符数组表示, 然后用字符参数作为参数调用writer对象的println方法
     printStackTrace(this, writer);
+
     return ostack;
 }
 
@@ -555,8 +586,11 @@ u4 *intern(Class *class, MethodBlock *mb, u4 *ostack) {
 /* java.lang.Thread */
 
 /* static method currentThread()Ljava/lang/Thread; */
+// zeng: 获得当前java线程对象地址
 u4 *currentThread(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 当前java线程对象地址入栈
     *ostack++ = (u4) getExecEnv()->thread;
+
     return ostack;
 }
 
@@ -577,52 +611,83 @@ u4 *start(Class *class, MethodBlock *mb, u4 *ostack) {
 }
 
 /* static method sleep(JI)V */
+// zeng: 线程暂停指定时间
 u4 *jamSleep(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 操作栈获取 时间ms
     long long ms = *((long long *) &ostack[0]);
+    // zeng: 操作战获取 时间ns
     int ns = ostack[2];
-    Thread *thread = threadSelf();
 
+    Thread *thread = threadSelf();
+    // zeng: 当前线程暂停指定时间
     threadSleep(thread, ms, ns);
 
+    // zeng: 参数出栈
     return ostack;
 }
 
 /* instance method interrupt()V */
+// zeng: 中断`线程的暂停`
 u4 *interrupt(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 对象地址
     Object *this = (Object *) *ostack;
+    // zeng:  获得java thread对象对应的thread结构体
     Thread *thread = threadSelf0(this);
+
+    // zeng: 中断`线程的暂停`
     if (thread)
         threadInterrupt(thread);
+
     return ostack;
 }
 
 /* instance method isAlive()Z */
+// zeng: 线程是否还存活
 u4 *isAlive(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 对象地址
     Object *this = (Object *) *ostack;
+    // zeng:  获得java thread对象对应的thread结构体
     Thread *thread = threadSelf0(this);
+
+    // zeng: 线程是否还存活, 结果入栈
     *ostack++ = thread ? threadIsAlive(thread) : FALSE;
+
     return ostack;
 }
 
 /* static method yield()V */
+// zeng: 当前线程让出cpu, 重新进入调度队列
 u4 *yield(Class *class, MethodBlock *mb, u4 *ostack) {
     Thread *thread = threadSelf();
+    // zeng: 当前线程让出cpu, 重新进入调度队列
     threadYield(thread);
+
     return ostack;
 }
 
 /* instance method isInterrupted()Z */
+// zeng: 线程是否被interrupt
 u4 *isInterrupted(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 对象地址
     Object *this = (Object *) *ostack;
+    // zeng:  获得java thread对象对应的thread结构体
     Thread *thread = threadSelf0(this);
+
+    // zeng: 线程是否被interrupt, 结果入栈
     *ostack++ = thread ? threadIsInterrupted(thread) : FALSE;
+
     return ostack;
 }
 
 /* static method interrupted()Z */
+// zeng: 线程是否被interrupt, 并清除interrupt状态
 u4 *interrupted(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: 当前线程
     Thread *thread = threadSelf();
+
+    // zeng: 线程是否被interrupt, 并清除interrupt状态. 结果入栈
     *ostack++ = threadInterrupted(thread);
+
     return ostack;
 }
 
@@ -631,7 +696,6 @@ u4 *nativeSetPriority(Class *class, MethodBlock *mb, u4 *ostack) {
     return ostack + 1;
 }
 
-// zeng: TODO
 char *native_methods[][2] = {
         "arraycopy", (char *) arraycopy,
         "insertSystemProperties", (char *) insertSystemProperties,

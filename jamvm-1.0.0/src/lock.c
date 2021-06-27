@@ -427,7 +427,7 @@ void objectUnlock(Object *obj) {
     }
 }
 
-// zeng: 线程进行wait等待队列, 直到条件满足被唤醒或者被interrupt
+// zeng: 线程进入wait等待队列, 直到条件满足被唤醒或者被interrupt
 void objectWait(Object *obj, long long ms, int ns) {
     Thread *self = threadSelf();
     // zeng: lockword

@@ -144,7 +144,7 @@ void threadYield(Thread *thread) {
     pthread_yield();
 }
 
-// zeng: 中断线程的暂停
+// zeng: 中断`线程的暂停`
 void threadInterrupt(Thread *thread) {
     // zeng: 获取线程等待的monitor
     Monitor *mon = thread->wait_mon;

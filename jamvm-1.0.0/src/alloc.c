@@ -1264,16 +1264,23 @@ Class *allocClass() {
     return class;
 }
 
+// zeng: 复制对象, 返回复制的对象地址
 Object *cloneObject(Object *ob) {
+    // zeng: 对象所在的chunk结构体地址
     unsigned int hdr = HEADER((((char *) ob) - HEADER_SIZE));
+    // zeng: chunk的大小减去chunk结构体大小 为对象大小
     int size = HDR_SIZE(hdr) - HEADER_SIZE;
+
+    // zeng: gcMalloc分配一个新的chunk
     Object *clone = (Object *) gcMalloc(size);
 
     if (clone != NULL) {
+        // zeng: memcpy复制对象内容
         memcpy(clone, ob, size);
-
+        // zeng: 无锁
         clone->lock = 0;
 
+        // zeng: 如果对象有finalize方法,  将对象加入has_fnlzr_list
         if (CLASS_CB(clone->class)->finalizer != NULL) ADD_FINALIZED_OBJECT(clone);
 
         TRACE_ALLOC(("<ALLOC: cloned object @ 0x%x clone @ 0x:%x>\n", ob, clone));
