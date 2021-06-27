@@ -232,17 +232,20 @@ void initialiseJavaStack(ExecEnv *ee) {
     char *stack = malloc(java_stack_size);
     // zeng: 在栈空间里分配一个MethodBlock
     MethodBlock *mb = (MethodBlock *) stack;
-    // zeng: 接下来的地址分配main方法的stack frame
+
+    // zeng: 没有本地变量数组
+
+    // zeng: 接下来的地址分配线程最顶层方法(c方法)的stack frame.
     Frame *top = (Frame *) (mb + 1);
 
-    // zeng: TODO main方法不需要操作数栈?
+    // zeng: c方法不需要操作数栈
     mb->max_stack = 0;
 
-    // zeng: 设置main方法 stack frame中的MethodBlock
+    // zeng: 设置c方法 stack frame中的MethodBlock
     top->mb = mb;
 
     // zeng: frame结构接下来的栈地址赋值给ostack 也就是frame结构中只保存ostack地址 ostack空间在栈空间里frame结构接下来的地址下分配
-    // zeng: TODO main栈帧没有本地变量 和 操作数栈? 这里设置ostack因为ostack是栈帧最后一个数据结构 方便定位栈帧结尾?
+    // zeng: top方法(c方法)栈帧操作数栈地址. 由于max_stack为0, 所以实际上这个栈帧是没有操作栈空间的.
     top->ostack = (u4 *) (top + 1);
 
     top->prev = 0;
@@ -354,7 +357,7 @@ void *threadStart(void *arg) {
     // zeng: 解锁
     objectUnlock(jThread);
 
-    // zeng: TODO
+    // zeng: 禁止线程被暂停
     disableSuspend0(thread, &group)
 
     // zeng; 互斥锁

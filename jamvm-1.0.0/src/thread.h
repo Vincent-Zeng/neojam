@@ -73,13 +73,13 @@ extern int systemIdle(Thread *self);
 extern void disableSuspend0(Thread *thread, void *stack_top);
 extern void enableSuspend(Thread *thread);
 
-// zeng: TODO
+// zeng: 禁止线程被暂停
 #define disableSuspend(thread)          \
 {                                       \
     sigjmp_buf *env;                    \
     env = alloca(sizeof(sigjmp_buf));   \
-    sigsetjmp(*env, FALSE);             \
-    disableSuspend0(thread, (void*)env);\
+    sigsetjmp(*env, FALSE);             \   // zeng: TODO
+    disableSuspend0(thread, (void*)env);\   // zeng: 禁止线程被暂停
 }
 
 typedef struct {
