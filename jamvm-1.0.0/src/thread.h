@@ -38,8 +38,8 @@ typedef struct monitor {
     Thread *owner;
     int count;
     int waiting;
-    int notifying;
-    int interrupting;
+    int notifying;  // zeng: 还未处理notify的线程数
+    int interrupting; // zeng: 还未处理interrupt的线程数
     int entering;
     struct monitor *next;
     char in_use;

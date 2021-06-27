@@ -22,14 +22,17 @@
 #define HEADER_SIZE		4
 #define FLC_BIT			2
 
+// zeng: 对象所在chunk的header的flc bit置0, 表示没有线程在等待轻量锁释放
 #define clear_flc_bit(o) { \
 	unsigned int *hdr = (unsigned int*)(((char*)o)-HEADER_SIZE); \
         *hdr  &= ~FLC_BIT; \
 }
 
+// zeng: 对象所在chunk的header的flc bit置1, 表示没有线程在等待轻量锁释放
 #define set_flc_bit(o) { \
 	unsigned int *hdr = (unsigned int*)(((char*)o)-HEADER_SIZE); \
         *hdr  |= FLC_BIT; \
 }
 
+// zeng: 是否有线程在等待轻量锁释放
 #define test_flc_bit(o) *(unsigned int*)(((char*)o)-HEADER_SIZE) & FLC_BIT

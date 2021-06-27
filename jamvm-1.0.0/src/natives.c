@@ -566,9 +566,13 @@ u4 *nativeInit(Class *class, MethodBlock *mb, u4 *ostack) {
 }
 
 /* instance method start()V */
+// zeng: Thread.start
 u4 *start(Class *class, MethodBlock *mb, u4 *ostack) {
+    // zeng: java thread对象
     Object *this = (Object *) *ostack;
+    // zeng: 创建java线程对象对应的c线程
     createJavaThread(this);
+
     return ostack;
 }
 

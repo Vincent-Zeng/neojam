@@ -89,80 +89,111 @@ static int tidBitmapSize = 0;
 /* Generate a new thread ID - assumes the thread queue
  * lock is held */
 
+// zeng: 产生jvm内唯一id 作为java线程的id
 static int genThreadID() {
     int i = 0;
 
-retry:
-    for(; i < tidBitmapSize; i++) {
-        if(tidBitmap[i] != 0xffffffff) {
+    retry:
+    for (; i < tidBitmapSize; i++) {
+        if (tidBitmap[i] != 0xffffffff) {
             int n = ffs(~tidBitmap[i]);
-            tidBitmap[i] |= 1 << (n-1);
-            return (i<<5) + n;
-	}
+            tidBitmap[i] |= 1 << (n - 1);
+            return (i << 5) + n;
+        }
     }
 
-    tidBitmap = (unsigned int *)realloc(tidBitmap, (tidBitmapSize + MAP_INC) * sizeof(unsigned int));
+    tidBitmap = (unsigned int *) realloc(tidBitmap, (tidBitmapSize + MAP_INC) * sizeof(unsigned int));
     memset(tidBitmap + tidBitmapSize, 0, MAP_INC * sizeof(unsigned int));
     tidBitmapSize += MAP_INC;
     goto retry;
 }
 
+// zeng: 线程是否还存活
 int threadIsAlive(Thread *thread) {
     return thread->state != 0;
 }
 
+// zeng: 线程是否被interrupt, 并清除interrupt状态
 int threadInterrupted(Thread *thread) {
     int r = thread->interrupted;
+
     thread->interrupted = FALSE;
+
     return r;
 }
 
+// zeng: 线程是否被interrupt
 int threadIsInterrupted(Thread *thread) {
     return thread->interrupted;
 }
 
+// zeng: 线程暂停指定时间
 void threadSleep(Thread *thread, long long ms, int ns) {
+    // zeng: 竞争sleep_mon
     monitorLock(&sleep_mon, thread);
+
+    // zeng: 线程进行wait等待队列, 直到超时被唤醒或者被interrupt
     monitorWait(&sleep_mon, thread, ms, ns);
+
+    // zeng: 释放sleep_mon
     monitorUnlock(&sleep_mon, thread);
 }
 
+// zeng: 当前线程让出cpu, 重新进入调度队列
 void threadYield(Thread *thread) {
     pthread_yield();
 }
 
+// zeng: 中断线程的暂停
 void threadInterrupt(Thread *thread) {
+    // zeng: 获取线程等待的monitor
     Monitor *mon = thread->wait_mon;
 
+    // zeng: interrupted设为TRUE
     thread->interrupted = TRUE;
 
-    if(mon) {
+    // zeng: 如果没有等待的monitor, 则什么都不做
+    if (mon) {
         Thread *self = threadSelf();
+
         char owner = (mon->owner == self);
-        if(!owner) {
+
+        if (!owner) {   // zeng: 该线程不持有该monitor
             int i;
 
-	    /* Another thread may be holding the monitor -
-	     * if we can't get it after a couple attempts give-up
-	     * to avoid deadlock */
-            for(i = 0; i < 5; i++) {
-                if(!pthread_mutex_trylock(&mon->lock))
-                    goto got_lock;
+            /* Another thread may be holding the monitor -
+             * if we can't get it after a couple attempts give-up
+             * to avoid deadlock */
+            // zeng: 尝试持有该monitor
+            for (i = 0; i < 5; i++) {
+
+                if (!pthread_mutex_trylock(&mon->lock))
+                    goto got_lock;  // zeng: 成功持有
+
                 pthread_yield();
-                if(thread->wait_mon != mon)
+
+                if (thread->wait_mon != mon)
                     return;
             }
+
             return;
         }
-got_lock:
-        if((thread->wait_mon == mon) && thread->interrupted && !thread->interrupting &&
-                  ((mon->notifying + mon->interrupting) < mon->waiting)) {
+
+        got_lock:
+
+        if ((thread->wait_mon == mon) && thread->interrupted && !thread->interrupting && ((mon->notifying + mon->interrupting) < mon->waiting)) {
+            // zeng: interrupting设为TRUE
             thread->interrupting = TRUE;
+            // zeng: 还未处理interrupt的线程数+1
             mon->interrupting++;
+            // zeng: 唤醒在该monitor的waiting等待队列上的所有线程(因为我们没有办法指定这个要中断的线程来唤醒)
             pthread_cond_broadcast(&mon->cv);
         }
-        if(!owner)
+
+        // zeng: 释放上面获得的互斥锁
+        if (!owner)
             pthread_mutex_unlock(&mon->lock);
+
     }
 }
 
@@ -176,196 +207,295 @@ void *getStackBase(Thread *thread) {
     return thread->stack_base;
 }
 
+// zeng: 获得java thread对象对应的thread结构体
 Thread *threadSelf0(Object *jThread) {
-    return (Thread*)(INST_DATA(jThread)[vmData_offset]);
+    return (Thread *) (INST_DATA(jThread)[vmData_offset]);
 }
 
+// zeng: 获取当前线程的thread结构体
 Thread *threadSelf() {
-    return (Thread*)pthread_getspecific(threadKey);
+    return (Thread *) pthread_getspecific(threadKey);
 }
 
+// zeng: 将当前线程的thread结构体设置进threadKey线程变量中
 void setThreadSelf(Thread *thread) {
-   pthread_setspecific(threadKey, thread);
+    pthread_setspecific(threadKey, thread);
 }
 
 ExecEnv *getExecEnv() {
     return threadSelf()->ee;
 }
 
+// zeng: 通常由main方法 和 线程start方法 调用, 用来初始化线程执行上下文(主要好是分配线程的栈空间)
 void initialiseJavaStack(ExecEnv *ee) {
     // zeng: 用malloc分配栈空间, 返回空间开始地址
-   char *stack = malloc(java_stack_size);
-   // zeng: 在栈空间里分配一个MethodBlock
-   MethodBlock *mb = (MethodBlock *) stack;
-   // zeng: 接下来的地址分配main方法的stack frame
-   Frame *top = (Frame *) (mb+1);
+    char *stack = malloc(java_stack_size);
+    // zeng: 在栈空间里分配一个MethodBlock
+    MethodBlock *mb = (MethodBlock *) stack;
+    // zeng: 接下来的地址分配main方法的stack frame
+    Frame *top = (Frame *) (mb + 1);
 
-   // zeng: TODO main方法不需要操作数栈?
-   mb->max_stack = 0;
+    // zeng: TODO main方法不需要操作数栈?
+    mb->max_stack = 0;
 
-   // zeng: 设置main方法 stack frame中的MethodBlock
-   top->mb = mb;
+    // zeng: 设置main方法 stack frame中的MethodBlock
+    top->mb = mb;
 
-   // zeng: frame结构接下来的栈地址赋值给ostack 也就是frame结构中只保存ostack地址 ostack空间在栈空间里frame结构接下来的地址下分配
-   // zeng: TODO main栈帧没有本地变量 和 操作数栈? 这里设置ostack因为ostack是栈帧最后一个数据结构 方便定位栈帧结尾?
-   top->ostack = (u4*)(top+1);
+    // zeng: frame结构接下来的栈地址赋值给ostack 也就是frame结构中只保存ostack地址 ostack空间在栈空间里frame结构接下来的地址下分配
+    // zeng: TODO main栈帧没有本地变量 和 操作数栈? 这里设置ostack因为ostack是栈帧最后一个数据结构 方便定位栈帧结尾?
+    top->ostack = (u4 *) (top + 1);
 
-   top->prev = 0;
+    top->prev = 0;
 
-   // zeng: 设置执行上下文中的栈开始地址
-   ee->stack = stack;
-   // zeng: 置为 最近的stack frame
-   ee->last_frame = top;
-   // zeng: 设置执行上下文中的栈结束地址
-   ee->stack_end = stack + java_stack_size-1024;
+    // zeng: 设置执行上下文中的栈开始地址
+    ee->stack = stack;
+    // zeng: 置为 最近的stack frame
+    ee->last_frame = top;
+    // zeng: 设置执行上下文中的栈结束地址
+    ee->stack_end = stack + java_stack_size - 1024;
 }
 
+// zeng: 开启线程
 void *threadStart(void *arg) {
-    Thread *thread = (Thread *)arg;
+    // zeng: 线程结构体
+    Thread *thread = (Thread *) arg;
+
+    // zeng: 线程执行上下文
     ExecEnv *ee = thread->ee;
+    // zeng: java线程对象
     Object *jThread = ee->thread;
+
     ClassBlock *cb = CLASS_CB(jThread->class);
+    // zeng: 获取run方法
     MethodBlock *run = cb->method_table[run_mtbl_idx];
+
     Object *group, *excep;
 
     TRACE(("Thread 0x%x id: %d started\n", thread, thread->id));
 
+    // zeng: 用来初始化线程执行上下文(主要好是分配线程的栈空间)
     initialiseJavaStack(ee);
+    // zeng:  将线程结构体设置入线程私有变量中
     setThreadSelf(thread);
 
     /* Need to disable suspension as we'll most likely
      * be waiting on lock when we're added to the thread
      * list, and now liable for suspension */
 
+    // zeng: TODO
     thread->stack_base = &group;
     disableSuspend0(thread, &group);
 
+    // zeng: 互斥锁
     pthread_mutex_lock(&lock);
+
+    // zeng:  生成jvm中线程唯一id
     thread->id = genThreadID();
 
+    // zeng: 设置为start
     thread->state = STARTED;
+
+    // zeng: 唤醒等待在条件变量上的所有线程
     pthread_cond_broadcast(&cv);
 
-    while(thread->state != RUNNING)
+    // zeng: 等待thread_state变为RUNNING
+    while (thread->state != RUNNING)
         pthread_cond_wait(&cv, &lock);
+
+    // zeng: 解锁
     pthread_mutex_unlock(&lock);
 
     /* Execute the thread's run() method... */
+    // zeng: 允许被被暂停
     enableSuspend(thread);
+    // zeng: 执行thead对象的run方法
     executeMethod(jThread, run);
+
+    // zeng: 下面就是执行完run方法,线程结束的清理工作了
 
     /* Call thread group's uncaughtException if exception
      * is of type java.lang.Throwable */
 
-    group = (Object *)INST_DATA(jThread)[group_offset];
-    if(excep = exceptionOccured()) {
+    // zeng: 获得thread对象的group字段值
+    group = (Object *) INST_DATA(jThread)[group_offset];
+
+    if (excep = exceptionOccured()) {   // zeng: 发生异常
         Class *throwable;
-	MethodBlock *uncaught_exp;
-       
-	clearException();
-	throwable = findSystemClass0("java/lang/Throwable");
-        if(throwable && isInstanceOf(throwable, excep->class)
-                     && (uncaught_exp = lookupMethod(group->class, "uncaughtException",
-			                              "(Ljava/lang/Thread;Ljava/lang/Throwable;)V")))
+        MethodBlock *uncaught_exp;
+
+        clearException();
+
+        throwable = findSystemClass0("java/lang/Throwable");
+
+        if (throwable && isInstanceOf(throwable, excep->class)
+            && (uncaught_exp = lookupMethod(group->class, "uncaughtException",
+                                            "(Ljava/lang/Thread;Ljava/lang/Throwable;)V")))
+            // zeng: 执行 ThreadGroup 的 uncaughtException 方法
             executeMethod(group, uncaught_exp, jThread, excep);
-	else {
+        else {
             setException(excep);
             printException();
-	}
+        }
     }
 
     /* remove thread from thread group */
+    // zeng: 执行ThreadGroup的removeThread方法
     executeMethod(group, (CLASS_CB(group->class))->method_table[rmveThrd_mtbl_idx], jThread);
 
+    // zeng: 上锁才能notify
     objectLock(jThread);
+
+    // zeng: 线程执行完了, 需要唤醒thread对象wait等待队列上的所有线程
     objectNotifyAll(jThread);
+
+    // zeng: state不再存活
     thread->state = 0;
+
+    // zeng: 解锁
     objectUnlock(jThread);
 
-    disableSuspend0(thread, &group);
+    // zeng: TODO
+    disableSuspend0(thread, &group)
+
+    // zeng; 互斥锁
     pthread_mutex_lock(&lock);
 
     /* remove from thread list... */
 
-    if((thread->prev->next = thread->next))
+    // zeng: 从线程队列中移除
+    if ((thread->prev->next = thread->next))
         thread->next->prev = thread->prev;
 
-    if(!INST_DATA(jThread)[daemon_offset])
+    // zeng: daemon线程
+    if (!INST_DATA(jThread)[daemon_offset])
         non_daemon_thrds--;
 
+    // zeng: 归还唯一id
     freeThreadID(thread->id);
 
+    // zeng: 释放锁
     pthread_mutex_unlock(&lock);
+
+    // zeng: 允许被暂停
     enableSuspend(thread);
 
-    INST_DATA(jThread)[vmData_offset] = (u4)&dead_thread;
+    // zeng: 设置thread结构体为dead_thread
+    INST_DATA(jThread)[vmData_offset] = (u4) &dead_thread;
+
     free(thread);
     free(ee->stack);
     free(ee);
 
-    if(non_daemon_thrds == 0) {
+    // zeng: 当前没有non_daemon线程
+    if (non_daemon_thrds == 0) {
         /* No need to bother with disabling suspension
 	 * around lock, as we're no longer on thread list */
+
+        // zeng: exit_lock互斥锁
         pthread_mutex_lock(&exit_lock);
+
+        // zeng: 唤醒等待在exit_cv的线程
         pthread_cond_signal(&exit_cv);
+
+        // zeng: 释放锁
         pthread_mutex_unlock(&exit_lock);
     }
 
     TRACE(("Thread 0x%x id: %d exited\n", thread, thread->id));
 }
 
+// zeng: 创建java线程对象对应的c线程
 void createJavaThread(Object *jThread) {
     ExecEnv *ee;
     Thread *thread;
+
+    // zeng: 当前线程
     Thread *self = threadSelf();
 
+    // zeng: 不允许被暂停
     disableSuspend(self);
 
+    // zeng: 互斥锁
     pthread_mutex_lock(&lock);
-    if(INST_DATA(jThread)[vmData_offset]) {
+
+    // zeng: 如果已经有c thread结构体
+    if (INST_DATA(jThread)[vmData_offset]) {
+        // zeng: 解锁
         pthread_mutex_unlock(&lock);
+
+        // zeng: 允许被暂停
         enableSuspend(self);
+
+        // zeng: 抛出异常
         signalException("java/lang/IllegalThreadStateException", "thread already started");
-	return;
+
+        return;
     }
 
-    ee = (ExecEnv*)malloc(sizeof(ExecEnv));
-    thread = (Thread*)malloc(sizeof(Thread));
+    // zeng: 分配线程执行上下文对象结构体
+    ee = (ExecEnv *) malloc(sizeof(ExecEnv));
+    // zeng: 分配thread结构体
+    thread = (Thread *) malloc(sizeof(Thread));
+    // zeng: 置0
     memset(ee, 0, sizeof(ExecEnv));
+    // zeng: 置0
     memset(thread, 0, sizeof(Thread));
 
+    // zeng: 线程执行上下文
     thread->ee = ee;
+    // zeng: java线程对象
     ee->thread = jThread;
-    INST_DATA(jThread)[vmData_offset] = (u4)thread;
+
+    // zeng: 设置vmData字段
+    INST_DATA(jThread)[vmData_offset] = (u4) thread;
+
+    // zeng: 释放锁
     pthread_mutex_unlock(&lock);
 
-    if(pthread_create(&thread->tid, &attributes, threadStart, thread)) {
+    // zeng: 创建一个c线程, 用来执行threadStart,传参为thread结构体, 创建的c线程tid设置进thread->tid
+    if (pthread_create(&thread->tid, &attributes, threadStart, thread)) {   // zeng: 创建失败
         INST_DATA(jThread)[vmData_offset] = 0;
+
         free(ee);
-	free(thread);
+        free(thread);
+
         enableSuspend(self);
-	signalException("java/lang/OutOfMemoryError", "can't create thread");
-	return;
+
+        // zeng: 抛出异常
+        signalException("java/lang/OutOfMemoryError", "can't create thread");
+
+        return;
     }
 
+    // zeng: 互斥锁
     pthread_mutex_lock(&lock);
-    while(thread->state != STARTED)
+
+    // zeng: 等待threadStart中设置thread->state为STARTED
+    while (thread->state != STARTED)
         pthread_cond_wait(&cv, &lock);
 
     /* add to thread list... */
 
-    if((thread->next = main.next))
+    // zeng: 插入线程队列中main之后的位置
+    if ((thread->next = main.next))
         main.next->prev = thread;
     thread->prev = &main;
     main.next = thread;
 
-    if(!INST_DATA(jThread)[daemon_offset])
+    // zeng: 如果不是daemon线程
+    if (!INST_DATA(jThread)[daemon_offset])
         non_daemon_thrds++;
 
+    // zeng: 设置thread->state为RUNNING
     thread->state = RUNNING;
+
+    // zeng: 唤醒等待在条件变量上的所有线程
     pthread_cond_broadcast(&cv);
 
+    // zeng: 解锁
     pthread_mutex_unlock(&lock);
+
+    // zeng: 允许被暂停
     enableSuspend(self);
 }
 
@@ -373,8 +503,8 @@ Thread *attachThread(char *name, char is_daemon, void *stack_base) {
     ExecEnv *ee;
     Thread *thread;
 
-    ee = (ExecEnv*)malloc(sizeof(ExecEnv));
-    thread = (Thread*)malloc(sizeof(Thread));
+    ee = (ExecEnv *) malloc(sizeof(ExecEnv));
+    thread = (Thread *) malloc(sizeof(Thread));
     memset(ee, 0, sizeof(ExecEnv));
     memset(thread, 0, sizeof(Thread));
 
@@ -389,20 +519,20 @@ Thread *attachThread(char *name, char is_daemon, void *stack_base) {
     ee->thread = allocObject(thread_class);
 
     INST_DATA(ee->thread)[daemon_offset] = FALSE;
-    INST_DATA(ee->thread)[name_offset] = (u4)Cstr2String(name);
+    INST_DATA(ee->thread)[name_offset] = (u4) Cstr2String(name);
     INST_DATA(ee->thread)[group_offset] = INST_DATA(main_ee.thread)[group_offset];
     INST_DATA(ee->thread)[priority_offset] = 5;
-    INST_DATA(ee->thread)[vmData_offset] = (u4)thread;
+    INST_DATA(ee->thread)[vmData_offset] = (u4) thread;
 
     /* add to thread list... */
 
     pthread_mutex_lock(&lock);
-    if((thread->next = main.next))
+    if ((thread->next = main.next))
         main.next->prev = thread;
     thread->prev = &main;
     main.next = thread;
 
-    if(!is_daemon)
+    if (!is_daemon)
         non_daemon_thrds++;
 
     thread->id = genThreadID();
@@ -413,15 +543,15 @@ Thread *attachThread(char *name, char is_daemon, void *stack_base) {
 }
 
 static void *shell(void *args) {
-    void *start = ((void**)args)[1];
-    Thread *self = attachThread(((char**)args)[0], TRUE, &self);
+    void *start = ((void **) args)[1];
+    Thread *self = attachThread(((char **) args)[0], TRUE, &self);
 
     free(args);
-    (*(void(*)(Thread*))start)(self);
+    (*(void (*)(Thread *)) start)(self);
 }
 
-void createVMThread(char *name, void (*start)(Thread*)) {
-    void **args = malloc(2 * sizeof(void*));
+void createVMThread(char *name, void (*start)(Thread *)) {
+    void **args = malloc(2 * sizeof(void *));
     pthread_t tid;
 
     args[0] = name;
@@ -429,40 +559,60 @@ void createVMThread(char *name, void (*start)(Thread*)) {
     pthread_create(&tid, &attributes, shell, args);
 }
 
+// zeng: 等待所有non_daemon线程退出
 void mainThreadWaitToExitVM() {
     Thread *self = threadSelf();
+
     TRACE(("Waiting for %d non-daemon threads to exit\n", non_daemon_thrds));
 
+    // zeng: 不允许被暂停
     disableSuspend(self);
+
+    // zeng: exit_lock互斥锁
     pthread_mutex_lock(&exit_lock);
 
+    // zeng: 线程state设为WAITING
     self->state = WAITING;
-    while(non_daemon_thrds)
+
+    // zeng: 等待所有non_daemon线程退出
+    while (non_daemon_thrds)
         pthread_cond_wait(&exit_cv, &exit_lock);
 
+    // zeng: 解锁
     pthread_mutex_unlock(&exit_lock);
+
+    // zeng: 允许被暂停
     enableSuspend(self);
 }
 
-// zeng: TODO
+// zeng: 暂停所有线程, 除了当前线程
 void suspendAllThreads(Thread *self) {
     Thread *thread;
 
     TRACE(("Thread 0x%x id: %d is suspending all threads\n", self, self->id));
+
+    // zeng; lock互斥锁
     pthread_mutex_lock(&lock);
 
-    for(thread = &main; thread != NULL; thread = thread->next) {
-        if(thread == self)
+
+    for (thread = &main; thread != NULL; thread = thread->next) {
+        // zeng: 当前线程
+        if (thread == self)
             continue;
-	thread->suspend = TRUE;
-	if(!thread->blocking)
-	    pthread_kill(thread->tid, SIGUSR1);
+
+        // zeng: suspend设为TRUE
+        thread->suspend = TRUE;
+
+        // zeng: 如果该线程没有被禁止暂停
+        if (!thread->blocking)
+            // zeng: 发送SIGUSR1信号
+            pthread_kill(thread->tid, SIGUSR1);
     }
 
-    for(thread = &main; thread != NULL; thread = thread->next) {
-        if(thread == self)
+    for (thread = &main; thread != NULL; thread = thread->next) {
+        if (thread == self)
             continue;
-	while(!thread->blocking && thread->state != SUSPENDED)
+        while (!thread->blocking && thread->state != SUSPENDED)
             pthread_yield();
     }
 
@@ -470,79 +620,116 @@ void suspendAllThreads(Thread *self) {
     pthread_mutex_unlock(&lock);
 }
 
+// zeng: 唤醒所有线程
 void resumeAllThreads(Thread *self) {
     Thread *thread;
 
     TRACE(("Thread 0x%x id: %d is resuming all threads\n", self, self->id));
+
+    // zeng: lock互斥锁
     pthread_mutex_lock(&lock);
 
-    for(thread = &main; thread != NULL; thread = thread->next) {
-        if(thread == self)
+    for (thread = &main; thread != NULL; thread = thread->next) {
+        // zeng: 当前线程
+        if (thread == self)
             continue;
-	thread->suspend = FALSE;
-	if(!thread->blocking)
-	    pthread_kill(thread->tid, SIGUSR1);
+
+        // zeng: suspend设为FALSE
+        thread->suspend = FALSE;
+
+        // zeng: 对于允许被暂停的线程, 发送SIGUSR1信号. 监听函数收到信号, 会恢复线程暂停前的状态.
+        if (!thread->blocking)
+            pthread_kill(thread->tid, SIGUSR1);
     }
 
-    for(thread = &main; thread != NULL; thread = thread->next) {
-	while(thread->state == SUSPENDED)
-            pthread_yield();
+    // zeng: 等待所有其他线程恢复状态
+    for (thread = &main; thread != NULL; thread = thread->next) {
+        while (thread->state == SUSPENDED)  // zeng: 该线程还未恢复状态
+            pthread_yield();    // zeng: 当前线程让出cpu, 重新进入调度队列
     }
 
     TRACE(("All threads resumed...\n"));
+
+    // zeng: 释放锁
     pthread_mutex_unlock(&lock);
 }
 
+// zeng: 暂停当前线程
 static void suspendLoop(Thread *thread) {
+    // zeng: 暂停前的state
     char old_state = thread->state;
+
     sigset_t mask;
     sigjmp_buf env;
 
+    // zeng: TODO
     sigsetjmp(env, FALSE);
 
+    // zeng: TODO
     thread->stack_top = &env;
+
+    // zeng: state设置为SUSPENDED
     thread->state = SUSPENDED;
 
     sigfillset(&mask);
+    // zeng: 不屏蔽SIGUSR1
     sigdelset(&mask, SIGUSR1);
+    // zeng: 不屏蔽SIGTERM
     sigdelset(&mask, SIGTERM);
 
-    while(thread->suspend)
+    // zeng: suspend为true的时候, 暂停当前线程
+    while (thread->suspend)
+        // zeng: 线程睡眠 等待SIGTERM SIGUSR1等信号唤醒
         sigsuspend(&mask);
 
+    // zeng: 执行到此处, 线程已恢复执行
+
+    // zeng: 恢复state
     thread->state = old_state;
 }
 
+// zeng: SIGUSR1信号 处理函数
 static void suspendHandler(int sig) {
     Thread *thread = threadSelf();
     suspendLoop(thread);
 }
 
+// zeng: 禁止线程被暂停
 void disableSuspend0(Thread *thread, void *stack_top) {
     sigset_t mask;
 
+    // zeng: 屏蔽SIGUSR1信号
     sigemptyset(&mask);
     sigaddset(&mask, SIGUSR1);
     pthread_sigmask(SIG_BLOCK, &mask, NULL);
 
+    // zeng:TODO
     thread->stack_top = stack_top;
+
+    // zeng: blocking设为TRUE
     thread->blocking = TRUE;
 }
 
+// zeng: 允许新城被暂停
 void enableSuspend(Thread *thread) {
     sigset_t mask;
 
     sigemptyset(&mask);
 
+    // zeng: blocking设为FALSE
     thread->blocking = FALSE;
 
-    if(thread->suspend)
+    // zeng: 如果线程的suspend之前被设为TRUE, 那么让该线程被咱暂停
+    if (thread->suspend)
         suspendLoop(thread);
 
+    // zeng: 不屏蔽SIGUSR1信号
     sigaddset(&mask, SIGUSR1);
+
     pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 }
 
+// zeng: 循环打印所有线程的信息
 void *dumpThreadsLoop(void *arg) {
     Thread *thread, dummy;
     sigset_t mask;
@@ -552,19 +739,19 @@ void *dumpThreadsLoop(void *arg) {
     sigaddset(&mask, SIGQUIT);
     sigaddset(&mask, SIGINT);
 
-    for(;;) {
+    for (;;) {
         // zeng: 等待信号
         sigwait(&mask, &sig);
 
         // zeng: 收到SIGINT时退出
-        if(sig == SIGINT)
-                exit(0);
+        if (sig == SIGINT)
+            exit(0);
 
         // zeng: 收到SIGQUIT时循环打印线程信息
         suspendAllThreads(&dummy);
         printf("Thread Dump\n-----------\n\n");
-        for(thread = &main; thread != NULL; thread = thread->next) {
-            char *name = String2Cstr((Object*)(INST_DATA(thread->ee->thread)[name_offset]));
+        for (thread = &main; thread != NULL; thread = thread->next) {
+            char *name = String2Cstr((Object *) (INST_DATA(thread->ee->thread)[name_offset]));
             printf("Thread: %s 0x%x tid: %d state: %d\n", name, thread, thread->tid, thread->state);
             free(name);
         }
@@ -572,17 +759,19 @@ void *dumpThreadsLoop(void *arg) {
     }
 }
 
+// zeng: 线程接收信号相关设置
 static void initialiseSignals() {
     struct sigaction act;
     sigset_t mask;
     pthread_t tid;
 
-    // zeng: 用于实现java thread的suspend
+    // zeng: 监听SIGUSR1信号
     act.sa_handler = suspendHandler;
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
     sigaction(SIGUSR1, &act, NULL);
 
+    // zeng: 忽略SIGQUIT SIGINT信号
     sigemptyset(&mask);
     sigaddset(&mask, SIGQUIT);
     sigaddset(&mask, SIGINT);
@@ -600,15 +789,16 @@ extern void scanThread(Thread *thread);
 void scanThreads() {
     Thread *thread;
 
-    for(thread = &main; thread != NULL; thread = thread->next)
+    for (thread = &main; thread != NULL; thread = thread->next)
         scanThread(thread);
 }
 
+// zeng: 是否存在线程是WAITING SUSPENDED状态
 int systemIdle(Thread *self) {
     Thread *thread;
 
-    for(thread = &main; thread != NULL; thread = thread->next)
-        if(thread != self && thread->state < WAITING)
+    for (thread = &main; thread != NULL; thread = thread->next)
+        if (thread != self && thread->state < WAITING)
             return FALSE;
 
     return TRUE;
@@ -622,21 +812,26 @@ void initialiseMainThread(int stack_size) {
 
     java_stack_size = stack_size;
 
-    // zeng: 分配一个thread-specific data area中的key给threadKey变量
+    // zeng: 分配一个thread-specific data area中的空间, 用threadKey标识, threadKey + tid唯一标识一个value(pthread_getspecific的参数只有threadKey, 猜测pthread_getspecific里会取得当前线程的tid, 组成唯一标识)
     pthread_key_create(&threadKey, NULL);
 
+    // zeng: 初始化互斥锁lock
     pthread_mutex_init(&lock, NULL);
+    // zeng: 初始化条件变量cv
     pthread_cond_init(&cv, NULL);
 
+    // zeng: 初始化互斥锁exit_lock
     pthread_mutex_init(&exit_lock, NULL);
+    // zeng: 初始化条件变量exit_cv
     pthread_cond_init(&exit_cv, NULL);
-
+    // zeng: 初始化 sleep_mon 这个monitor结构体
     monitorInit(&sleep_mon);
 
-    // zeng: TODO
+    // zeng: 设置线程属性配置
     pthread_attr_init(&attributes);
     pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
 
+    // zeng: TODO
     main.stack_base = &thrdGrp_class;
 
     // zeng: linux task -> pid
@@ -651,10 +846,11 @@ void initialiseMainThread(int stack_size) {
     // zeng: 将main thread struct地址存入thread-specific data area 中
     setThreadSelf(&main);
 
-    // zeng: TODO 先看完类加载再接着看
+    // zeng: 加载 链接 Thread类
     /* As we're initialising, VM will abort if Thread can't be found */
     thread_class = findSystemClass0("java/lang/Thread");
 
+    // zeng: Thread对象中的字段
     vmData = findField(thread_class, "vmData", "I");
     daemon = findField(thread_class, "daemon", "Z");
     name = findField(thread_class, "name", "Ljava/lang/String;");
@@ -664,10 +860,11 @@ void initialiseMainThread(int stack_size) {
     run = findMethod(thread_class, "run", "()V");
 
     /* findField and findMethod do not throw an exception... */
-    if((vmData == NULL) || (run == NULL) || (daemon == NULL) || (name == NULL) ||
-           (group == NULL) || (priority == NULL))
+    if ((vmData == NULL) || (run == NULL) || (daemon == NULL) || (name == NULL) ||
+        (group == NULL) || (priority == NULL))
         goto error;
 
+    // zeng: 字段在对象内容体中的偏移量
     vmData_offset = vmData->offset;
     daemon_offset = daemon->offset;
     group_offset = group->offset;
@@ -679,33 +876,33 @@ void initialiseMainThread(int stack_size) {
     main_ee.thread = allocObject(thread_class);
 
     thrdGrp_class = findSystemClass("java/lang/ThreadGroup");
-    if(exceptionOccured()) {
+    if (exceptionOccured()) {
         printException();
-	    exit(1);
+        exit(1);
     }
 
     root = findField(thrdGrp_class, "root", "Ljava/lang/ThreadGroup;");
     remove_thread = findMethod(thrdGrp_class, "removeThread", "(Ljava/lang/Thread;)V");
 
     /* findField and findMethod do not throw an exception... */
-    if((root == NULL) || (remove_thread == NULL))
+    if ((root == NULL) || (remove_thread == NULL))
         goto error;
 
     rmveThrd_mtbl_idx = remove_thread->method_table_index;
 
     INST_DATA(main_ee.thread)[daemon_offset] = FALSE;
-    INST_DATA(main_ee.thread)[name_offset] = (u4)Cstr2String("main");
+    INST_DATA(main_ee.thread)[name_offset] = (u4) Cstr2String("main");
     INST_DATA(main_ee.thread)[group_offset] = root->static_value;
     INST_DATA(main_ee.thread)[priority_offset] = 5;
 
-    INST_DATA(main_ee.thread)[vmData_offset] = (u4)&main;
+    INST_DATA(main_ee.thread)[vmData_offset] = (u4) &main;
 
     // zeng: 初始化signal相关 用于java层面线程的实现(例如suspend的实现)
     initialiseSignals();
 
     return;
 
-error:
+    error:
     printf("Error initialising VM (initialiseMainThread)\n");
     exit(0);
 }

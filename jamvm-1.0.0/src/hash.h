@@ -102,7 +102,7 @@ extern void resizeHash(HashTable *table, int new_size);
                     new_size = table.hash_size*2;                                  \
                                                                                    \
                 resizeHash(&table, new_size);                                      \
-	    }                                                                      \
+	        }                                                                      \
         }                                                                          \
     unlockVMLock(table.lock, self);                                                \
     enableSuspend(self);                                                           \

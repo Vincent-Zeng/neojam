@@ -18,6 +18,12 @@
  * Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
+/*
+ cmpxchgl r32, m32
+  eax 和 m32 比较, 如果相等, ZF置位且r32被设置进m32. 如果不相等,ZF复位且m32被设置进eax.
+
+ sete r8    取标志寄存器中ZF的值, 放到r8中
+ */
 #define COMPARE_AND_SWAP(addr, old_val, new_val)   \
 ({                                                 \
     char result;                                   \
